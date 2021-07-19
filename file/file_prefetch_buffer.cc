@@ -129,6 +129,7 @@ bool FilePrefetchBuffer::TryReadFromCache(uint64_t offset, size_t n,
     }
   }
 
+  read_offsets_.insert(offset);
   uint64_t offset_in_buffer = offset - buffer_offset_;
   *result = Slice(buffer_.BufferStart() + offset_in_buffer, n);
   return true;

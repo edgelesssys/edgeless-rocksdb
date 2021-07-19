@@ -685,7 +685,10 @@ bool DBTestBase::IsDirectIOSupported() {
 }
 
 bool DBTestBase::IsMemoryMappedAccessSupported() const {
-  return (!encrypted_env_);
+  /* MODIFIED TEST
+  When memory mapped access is enabled, we can't decrypt in-place anymore.
+  Was: return (!encrypted_env_); */
+  return false;
 }
 
 Status DBTestBase::Flush(int cf) {

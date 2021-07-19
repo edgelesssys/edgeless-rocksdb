@@ -2035,7 +2035,7 @@ TEST_P(DBBasicTestWithParallelIO, MultiGet) {
     ASSERT_TRUE(CheckValue(key_ints[i], values[i].ToString()));
   }
   if (compression_enabled() && !has_compressed_cache()) {
-    expected_reads += (read_from_cache ? 2 : 3);
+    expected_reads += (read_from_cache ? 2 : 4);  // EDG: adjacent read optimization not supported
   } else {
     expected_reads += (read_from_cache ? 2 : 4);
   }
@@ -2057,7 +2057,7 @@ TEST_P(DBBasicTestWithParallelIO, MultiGet) {
     ASSERT_TRUE(CheckUncompressableValue(key_uncmp[i], values[i].ToString()));
   }
   if (compression_enabled() && !has_compressed_cache()) {
-    expected_reads += (read_from_cache ? 3 : 3);
+    expected_reads += (read_from_cache ? 4 : 4);  // EDG: adjacent read optimization not supported
   } else {
     expected_reads += (read_from_cache ? 4 : 4);
   }
@@ -2079,7 +2079,7 @@ TEST_P(DBBasicTestWithParallelIO, MultiGet) {
     ASSERT_TRUE(CheckUncompressableValue(key_tr[i], values[i].ToString()));
   }
   if (compression_enabled() && !has_compressed_cache()) {
-    expected_reads += (read_from_cache ? 0 : 2);
+    expected_reads += (read_from_cache ? 0 : 3);  // EDG: adjacent read optimization not supported
     ASSERT_EQ(env_->random_read_counter_.Read(), expected_reads);
   } else {
     if (has_uncompressed_cache()) {
@@ -2129,7 +2129,8 @@ TEST_P(DBBasicTestWithParallelIO, MultiGetWithChecksumMismatch) {
   ASSERT_TRUE(CheckValue(0, values[0].ToString()));
   //ASSERT_TRUE(CheckValue(50, values[1].ToString()));
   ASSERT_EQ(statuses[0], Status::OK());
-  ASSERT_EQ(statuses[1], Status::Corruption());
+  // EDG: VerifyChecksum and sync point removed
+  // ASSERT_EQ(statuses[1], Status::Corruption());
 
   SyncPoint::GetInstance()->DisableProcessing();
 }

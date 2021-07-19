@@ -1,3 +1,9 @@
+// Copyright (c) Edgeless Systems GmbH.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
@@ -18,6 +24,7 @@
 #include "rocksdb/env.h"
 #include "table/block_based/block.h"
 #include "table/block_based/block_based_table_reader.h"
+#include "table/block_based/block_decryptor.h"
 #include "table/format.h"
 #include "table/persistent_cache_helper.h"
 #include "util/coding.h"
@@ -29,41 +36,9 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-inline void BlockFetcher::CheckBlockChecksum() {
-  // Check the crc of the type and the block contents
-  if (read_options_.verify_checksums) {
-    const char* data = slice_.data();  // Pointer to where Read put the data
-    PERF_TIMER_GUARD(block_checksum_time);
-    uint32_t value = DecodeFixed32(data + block_size_ + 1);
-    uint32_t actual = 0;
-    switch (footer_.checksum()) {
-      case kNoChecksum:
-        break;
-      case kCRC32c:
-        value = crc32c::Unmask(value);
-        actual = crc32c::Value(data, block_size_ + 1);
-        break;
-      case kxxHash:
-        actual = XXH32(data, static_cast<int>(block_size_) + 1, 0);
-        break;
-      case kxxHash64:
-        actual = static_cast<uint32_t>(
-            XXH64(data, static_cast<int>(block_size_) + 1, 0) &
-            uint64_t{0xffffffff});
-        break;
-      default:
-        status_ = Status::Corruption(
-            "unknown checksum type " + ToString(footer_.checksum()) + " in " +
-            file_->file_name() + " offset " + ToString(handle_.offset()) +
-            " size " + ToString(block_size_));
-    }
-    if (status_.ok() && actual != value) {
-      status_ = Status::Corruption(
-          "block checksum mismatch: expected " + ToString(actual) + ", got " +
-          ToString(value) + "  in " + file_->file_name() + " offset " +
-          ToString(handle_.offset()) + " size " + ToString(block_size_));
-    }
-  }
+// EDG: replacement for the original BlockFetcher::CheckBlockChecksum()
+inline void BlockFetcher::Decrypt() {
+  status_ = DecryptBlock(*file_->GetKey(), slice_, handle_);
 }
 
 inline bool BlockFetcher::TryGetUncompressBlockFromPersistentCache() {
@@ -88,16 +63,20 @@ inline bool BlockFetcher::TryGetUncompressBlockFromPersistentCache() {
 }
 
 inline bool BlockFetcher::TryGetFromPrefetchBuffer() {
-  if (prefetch_buffer_ != nullptr &&
-      prefetch_buffer_->TryReadFromCache(
+  if (!prefetch_buffer_) return got_from_prefetch_buffer_;
+
+  decltype(auto) read_offsets = prefetch_buffer_->read_offsets();
+  const auto fetched_before =
+      read_offsets.find(handle_.offset()) != read_offsets.cend();
+  if (prefetch_buffer_->TryReadFromCache(
           handle_.offset(),
           static_cast<size_t>(handle_.size()) + kBlockTrailerSize, &slice_,
           for_compaction_)) {
     block_size_ = static_cast<size_t>(handle_.size());
-    CheckBlockChecksum();
-    if (!status_.ok()) {
-      return true;
-    }
+    // EDG: only decrypt if we haven't seen this block already
+    if (!fetched_before) Decrypt();
+
+    if (!status_.ok()) return true;
     got_from_prefetch_buffer_ = true;
     used_buf_ = const_cast<char*>(slice_.data());
   }
@@ -252,7 +231,7 @@ Status BlockFetcher::ReadBlockContents() {
                                 " bytes, got " + ToString(slice_.size()));
     }
 
-    CheckBlockChecksum();
+    Decrypt();
     if (status_.ok()) {
       InsertCompressedBlockToPersistentCacheIfNeeded();
     } else {

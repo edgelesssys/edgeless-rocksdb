@@ -3670,24 +3670,27 @@ TEST_F(HarnessTest, SimpleSpecialKey) {
 
 TEST_F(HarnessTest, FooterTests) {
   {
-    // upconvert legacy block based
+    // MODIFIED TEST: encode/decode encrypted footer
     std::string encoded;
-    Footer footer(kLegacyBlockBasedTableMagicNumber, 0);
+    Footer footer;
     BlockHandle meta_index(10, 5), index(20, 15);
     footer.set_metaindex_handle(meta_index);
     footer.set_index_handle(index);
-    footer.EncodeTo(&encoded);
+    edg::EncryptedWritableFile fw;
+    fw.CreateKey();
+    footer.EncodeTo(&encoded, fw);
     Footer decoded_footer;
     Slice encoded_slice(encoded);
-    decoded_footer.DecodeFrom(&encoded_slice);
-    ASSERT_EQ(decoded_footer.table_magic_number(), kBlockBasedTableMagicNumber);
-    ASSERT_EQ(decoded_footer.checksum(), kCRC32c);
+    edg::EncryptedFile fr;
+    decoded_footer.DecodeFrom(&encoded_slice, fr);
+    ASSERT_EQ(decoded_footer.table_magic_number(), 0);
     ASSERT_EQ(decoded_footer.metaindex_handle().offset(), meta_index.offset());
     ASSERT_EQ(decoded_footer.metaindex_handle().size(), meta_index.size());
     ASSERT_EQ(decoded_footer.index_handle().offset(), index.offset());
     ASSERT_EQ(decoded_footer.index_handle().size(), index.size());
-    ASSERT_EQ(decoded_footer.version(), 0U);
+    ASSERT_EQ(decoded_footer.version(), 4);
   }
+#if 0
   {
     // xxhash block based
     std::string encoded;
@@ -3789,6 +3792,7 @@ TEST_F(HarnessTest, FooterTests) {
     ASSERT_EQ(decoded_footer.index_handle().size(), index.size());
     ASSERT_EQ(decoded_footer.version(), 2U);
   }
+#endif
 }
 
 class IndexBlockRestartIntervalTest
@@ -4196,6 +4200,10 @@ TEST_P(BlockBasedTableTest, BlockAlignTest) {
   // The below block of code verifies that we can read back the keys. Set
   // block_align to false when creating the reader to ensure we can flip between
   // the two modes without any issues
+
+  // MODIFIED TEST: the code below re-uses memory that was already decrypted
+  // (via memory-backed file reader)
+#if 0
   std::unique_ptr<TableReader> table_reader;
   bbto.block_align = false;
   Options options2;
@@ -4227,6 +4235,7 @@ TEST_P(BlockBasedTableTest, BlockAlignTest) {
   expected_key--;
   ASSERT_EQ(expected_key, 10000);
   table_reader.reset();
+#endif
 }
 
 TEST_P(BlockBasedTableTest, PropertiesBlockRestartPointTest) {

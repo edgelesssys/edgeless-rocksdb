@@ -27,6 +27,10 @@
 #include "util/compression_context_cache.h"
 #include "util/string_util.h"
 
+// EDG: const to disable the legacy compression format '1' without changing the
+// code too much
+static constexpr bool EDG_NO_LEGACY = true;
+
 #ifdef SNAPPY
 #include <snappy.h>
 #endif
@@ -679,7 +683,7 @@ inline bool Zlib_Compress(const CompressionInfo& info,
   }
 
   size_t output_header_len = 0;
-  if (compress_format_version == 2) {
+  if (compress_format_version == 2 || EDG_NO_LEGACY) {
     output_header_len = compression::PutDecompressedSizeInfo(
         output, static_cast<uint32_t>(length));
   }
@@ -761,7 +765,7 @@ inline CacheAllocationPtr Zlib_Uncompress(
     MemoryAllocator* allocator = nullptr, int windowBits = -14) {
 #ifdef ZLIB
   uint32_t output_len = 0;
-  if (compress_format_version == 2) {
+  if (compress_format_version == 2 || EDG_NO_LEGACY) {
     if (!compression::GetDecompressedSizeInfo(&input_data, &input_length,
                                               &output_len)) {
       return nullptr;
@@ -867,7 +871,7 @@ inline bool BZip2_Compress(const CompressionInfo& /*info*/,
     return false;
   }
   size_t output_header_len = 0;
-  if (compress_format_version == 2) {
+  if (compress_format_version == 2 || EDG_NO_LEGACY) {
     output_header_len = compression::PutDecompressedSizeInfo(
         output, static_cast<uint32_t>(length));
   }
@@ -924,7 +928,7 @@ inline CacheAllocationPtr BZip2_Uncompress(
     uint32_t compress_format_version, MemoryAllocator* allocator = nullptr) {
 #ifdef BZIP2
   uint32_t output_len = 0;
-  if (compress_format_version == 2) {
+  if (compress_format_version == 2 || EDG_NO_LEGACY) {
     if (!compression::GetDecompressedSizeInfo(&input_data, &input_length,
                                               &output_len)) {
       return nullptr;
@@ -1014,7 +1018,7 @@ inline bool LZ4_Compress(const CompressionInfo& info,
   }
 
   size_t output_header_len = 0;
-  if (compress_format_version == 2) {
+  if (compress_format_version == 2 || EDG_NO_LEGACY) {
     // new encoding, using varint32 to store size information
     output_header_len = compression::PutDecompressedSizeInfo(
         output, static_cast<uint32_t>(length));
@@ -1081,7 +1085,7 @@ inline CacheAllocationPtr LZ4_Uncompress(const UncompressionInfo& info,
                                          MemoryAllocator* allocator = nullptr) {
 #ifdef LZ4
   uint32_t output_len = 0;
-  if (compress_format_version == 2) {
+  if (compress_format_version == 2 || EDG_NO_LEGACY) {
     // new encoding, using varint32 to store size information
     if (!compression::GetDecompressedSizeInfo(&input_data, &input_length,
                                               &output_len)) {
@@ -1148,7 +1152,7 @@ inline bool LZ4HC_Compress(const CompressionInfo& info,
   }
 
   size_t output_header_len = 0;
-  if (compress_format_version == 2) {
+  if (compress_format_version == 2 || EDG_NO_LEGACY) {
     // new encoding, using varint32 to store size information
     output_header_len = compression::PutDecompressedSizeInfo(
         output, static_cast<uint32_t>(length));

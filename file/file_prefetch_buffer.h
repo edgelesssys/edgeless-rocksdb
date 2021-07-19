@@ -11,6 +11,7 @@
 #include <atomic>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include "file/random_access_file_reader.h"
 #include "port/port.h"
 #include "rocksdb/env.h"
@@ -79,6 +80,14 @@ class FilePrefetchBuffer {
   // tracked if track_min_offset = true.
   size_t min_offset_read() const { return min_offset_read_; }
 
+  // EDG: The set of offsets that were read through this file buffer.
+  // We need this in erocksdb to decide if the data has already been decrypted.
+  // TODO: is there a cheaper way? Just tracking the max_read_offset doesn't
+  // work.
+  // TODO: anyway, we probably want to turn FilePrefetchBuffer, as it will
+  // mostly waste EPC.
+  const auto& read_offsets() const { return read_offsets_; }
+
  private:
   AlignedBuffer buffer_;
   uint64_t buffer_offset_;
@@ -93,5 +102,7 @@ class FilePrefetchBuffer {
   // If true, track minimum `offset` ever passed to TryReadFromCache(), which
   // can be fetched from min_offset_read().
   bool track_min_offset_;
+
+  std::unordered_set<uint64_t> read_offsets_;
 };
 }  // namespace ROCKSDB_NAMESPACE

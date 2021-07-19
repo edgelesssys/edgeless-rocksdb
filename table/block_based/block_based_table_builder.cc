@@ -1,3 +1,9 @@
+// Copyright (c) Edgeless Systems GmbH.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
@@ -47,6 +53,8 @@
 #include "util/stop_watch.h"
 #include "util/string_util.h"
 #include "util/xxhash.h"
+
+using namespace edgeless;
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -465,16 +473,8 @@ BlockBasedTableBuilder::BlockBasedTableBuilder(
     const uint64_t creation_time, const uint64_t oldest_key_time,
     const uint64_t target_file_size, const uint64_t file_creation_time) {
   BlockBasedTableOptions sanitized_table_options(table_options);
-  if (sanitized_table_options.format_version == 0 &&
-      sanitized_table_options.checksum != kCRC32c) {
-    ROCKS_LOG_WARN(
-        ioptions.info_log,
-        "Silently converting format_version to 1 because checksum is "
-        "non-default");
-    // silently convert format_version to 1 to keep consistent with current
-    // behavior
-    sanitized_table_options.format_version = 1;
-  }
+
+  file->CreateKey();
 
   rep_ = new Rep(ioptions, moptions, sanitized_table_options,
                  internal_comparator, int_tbl_prop_collector_factories,
@@ -598,10 +598,9 @@ void BlockBasedTableBuilder::WriteBlock(BlockBuilder* block,
 void BlockBasedTableBuilder::WriteBlock(const Slice& raw_block_contents,
                                         BlockHandle* handle,
                                         bool is_data_block) {
-  // File format contains a sequence of blocks where each block has:
+  // EDG: File format contains a sequence of blocks where each block has:
   //    block_data: uint8[n]
-  //    type: uint8
-  //    crc: uint32
+  //    BlockTrailer: uint8[17]
   assert(ok());
   Rep* r = rep_;
 
@@ -715,6 +714,12 @@ void BlockBasedTableBuilder::WriteBlock(const Slice& raw_block_contents,
   }
 }
 
+// Derive Slice from container
+template <typename T>
+static rocksdb::Slice to_slice(const T& a) {
+  return {reinterpret_cast<const char*>(a.data()), a.size()};
+}
+
 void BlockBasedTableBuilder::WriteRawBlock(const Slice& block_contents,
                                            CompressionType type,
                                            BlockHandle* handle,
@@ -724,66 +729,39 @@ void BlockBasedTableBuilder::WriteRawBlock(const Slice& block_contents,
   handle->set_offset(r->offset);
   handle->set_size(block_contents.size());
   assert(r->status.ok());
-  r->status = r->file->Append(block_contents);
-  if (r->status.ok()) {
-    char trailer[kBlockTrailerSize];
-    trailer[0] = type;
-    char* trailer_without_type = trailer + 1;
-    switch (r->table_options.checksum) {
-      case kNoChecksum:
-        EncodeFixed32(trailer_without_type, 0);
-        break;
-      case kCRC32c: {
-        auto crc = crc32c::Value(block_contents.data(), block_contents.size());
-        crc = crc32c::Extend(crc, trailer, 1);  // Extend to cover block type
-        EncodeFixed32(trailer_without_type, crc32c::Mask(crc));
-        break;
-      }
-      case kxxHash: {
-        XXH32_state_t* const state = XXH32_createState();
-        XXH32_reset(state, 0);
-        XXH32_update(state, block_contents.data(),
-                     static_cast<uint32_t>(block_contents.size()));
-        XXH32_update(state, trailer, 1);  // Extend  to cover block type
-        EncodeFixed32(trailer_without_type, XXH32_digest(state));
-        XXH32_freeState(state);
-        break;
-      }
-      case kxxHash64: {
-        XXH64_state_t* const state = XXH64_createState();
-        XXH64_reset(state, 0);
-        XXH64_update(state, block_contents.data(),
-                     static_cast<uint32_t>(block_contents.size()));
-        XXH64_update(state, trailer, 1);  // Extend  to cover block type
-        EncodeFixed32(
-            trailer_without_type,
-            static_cast<uint32_t>(XXH64_digest(state) &  // lower 32 bits
-                                  uint64_t{0xffffffff}));
-        XXH64_freeState(state);
-        break;
-      }
-    }
 
-    assert(r->status.ok());
-    TEST_SYNC_POINT_CALLBACK(
-        "BlockBasedTableBuilder::WriteRawBlock:TamperWithChecksum",
-        static_cast<char*>(trailer));
-    r->status = r->file->Append(Slice(trailer, kBlockTrailerSize));
+  // EDG: encrypt the raw (already compressed) block
+  const auto size_encoded = block_contents.size() + sizeof(BlockTrailer);
+  std::vector<uint8_t> buf(size_encoded);
+  /* Copy plaintext to buffer; will be encrypted in place together with
+  BlockTrailer::type. Note that we do not add the type byte as separate AAD
+  because of perf considerations.
+  TODO: ideally, we would save this copy. */
+  std::copy_n(reinterpret_cast<const uint8_t*>(block_contents.data()),
+              block_contents.size(), buf.begin());
+  const auto trailer =
+      reinterpret_cast<BlockTrailer*>(buf.data() + block_contents.size());
+  trailer->type = type;
+  // The plaintext includes BlockTrailer::type
+  Buffer plaintext(buf.data(),
+                   block_contents.size() + sizeof(BlockTrailer::type));
+  // Encrypt in place
+  r->file->GetKey()->Encrypt(plaintext, handle->GetEncIv(), trailer->tag,
+                             plaintext);
+  r->status = r->file->Append(to_slice(buf));
+  if (!r->status.ok()) return;
+
+  r->status = InsertBlockInCache(block_contents, type, handle);
+  if (!r->status.ok()) return;
+
+  r->offset += size_encoded;
+  if (r->table_options.block_align && is_data_block) {
+    size_t pad_bytes = (r->alignment - (size_encoded & (r->alignment - 1))) &
+                       (r->alignment - 1);
+
+    r->status = r->file->Pad(pad_bytes);
     if (r->status.ok()) {
-      r->status = InsertBlockInCache(block_contents, type, handle);
-    }
-    if (r->status.ok()) {
-      r->offset += block_contents.size() + kBlockTrailerSize;
-      if (r->table_options.block_align && is_data_block) {
-        size_t pad_bytes =
-            (r->alignment - ((block_contents.size() + kBlockTrailerSize) &
-                             (r->alignment - 1))) &
-            (r->alignment - 1);
-        r->status = r->file->Pad(pad_bytes);
-        if (r->status.ok()) {
-          r->offset += pad_bytes;
-        }
-      }
+      r->offset += pad_bytes;
     }
   }
 }
@@ -1033,26 +1011,13 @@ void BlockBasedTableBuilder::WriteRangeDelBlock(
 
 void BlockBasedTableBuilder::WriteFooter(BlockHandle& metaindex_block_handle,
                                          BlockHandle& index_block_handle) {
-  Rep* r = rep_;
-  // No need to write out new footer if we're using default checksum.
-  // We're writing legacy magic number because we want old versions of RocksDB
-  // be able to read files generated with new release (just in case if
-  // somebody wants to roll back after an upgrade)
-  // TODO(icanadi) at some point in the future, when we're absolutely sure
-  // nobody will roll back to RocksDB 2.x versions, retire the legacy magic
-  // number and always write new table files with new magic number
-  bool legacy = (r->table_options.format_version == 0);
-  // this is guaranteed by BlockBasedTableBuilder's constructor
-  assert(r->table_options.checksum == kCRC32c ||
-         r->table_options.format_version != 0);
-  Footer footer(
-      legacy ? kLegacyBlockBasedTableMagicNumber : kBlockBasedTableMagicNumber,
-      r->table_options.format_version);
+  // EDG: write integrity-protected footer
+  const auto& r = rep_;
+  Footer footer;
   footer.set_metaindex_handle(metaindex_block_handle);
   footer.set_index_handle(index_block_handle);
-  footer.set_checksum(r->table_options.checksum);
   std::string footer_encoding;
-  footer.EncodeTo(&footer_encoding);
+  footer.EncodeTo(&footer_encoding, *r->file);
   assert(r->status.ok());
   r->status = r->file->Append(footer_encoding);
   if (r->status.ok()) {

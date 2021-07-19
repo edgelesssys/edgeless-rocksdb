@@ -3554,7 +3554,9 @@ TEST_F(DBTest2, TraceWithFilter) {
 
 TEST_F(DBTest2, PinnableSliceAndMmapReads) {
   Options options = CurrentOptions();
-  options.allow_mmap_reads = true;
+  // MODIFIED TEST: this seems to mmap read-only memory, which we cannot decrypt
+  // in place
+  // options.allow_mmap_reads = true;
   options.max_open_files = 100;
   options.compression = kNoCompression;
   Reopen(options);
@@ -3565,7 +3567,8 @@ TEST_F(DBTest2, PinnableSliceAndMmapReads) {
   PinnableSlice pinned_value;
   ASSERT_EQ(Get("foo", &pinned_value), Status::OK());
   // It is not safe to pin mmap files as they might disappear by compaction
-  ASSERT_FALSE(pinned_value.IsPinned());
+  // MODIFIED TEST: mmap is not enabled
+  ASSERT_TRUE(pinned_value.IsPinned());
   ASSERT_EQ(pinned_value.ToString(), "bar");
 
   dbfull()->TEST_CompactRange(0 /* level */, nullptr /* begin */,
@@ -3582,7 +3585,8 @@ TEST_F(DBTest2, PinnableSliceAndMmapReads) {
   Close();
   ASSERT_OK(ReadOnlyReopen(options));
   ASSERT_EQ(Get("foo", &pinned_value), Status::OK());
-  ASSERT_FALSE(pinned_value.IsPinned());
+  // MODIFIED TEST: mmap is not enabled
+  ASSERT_TRUE(pinned_value.IsPinned());
   ASSERT_EQ(pinned_value.ToString(), "bar");
 
   pinned_value.Reset();

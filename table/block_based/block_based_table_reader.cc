@@ -1,3 +1,9 @@
+// Copyright (c) Edgeless Systems GmbH.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
@@ -34,6 +40,7 @@
 #include "table/block_based/block.h"
 #include "table/block_based/block_based_filter_block.h"
 #include "table/block_based/block_based_table_factory.h"
+#include "table/block_based/block_decryptor.h"
 #include "table/block_based/block_prefix_index.h"
 #include "table/block_based/filter_block.h"
 #include "table/block_based/full_filter_block.h"
@@ -56,6 +63,8 @@
 #include "util/string_util.h"
 #include "util/util.h"
 #include "util/xxhash.h"
+
+using namespace edgeless;
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -1294,67 +1303,6 @@ Status BlockBasedTable::PrefetchTail(
   return s;
 }
 
-Status VerifyChecksum(const ChecksumType type, const char* buf, size_t len,
-                      uint32_t expected) {
-  Status s;
-  uint32_t actual = 0;
-  switch (type) {
-    case kNoChecksum:
-      break;
-    case kCRC32c:
-      expected = crc32c::Unmask(expected);
-      actual = crc32c::Value(buf, len);
-      break;
-    case kxxHash:
-      actual = XXH32(buf, static_cast<int>(len), 0);
-      break;
-    case kxxHash64:
-      actual = static_cast<uint32_t>(XXH64(buf, static_cast<int>(len), 0) &
-                                     uint64_t{0xffffffff});
-      break;
-    default:
-      s = Status::Corruption("unknown checksum type");
-  }
-  if (s.ok() && actual != expected) {
-    s = Status::Corruption("properties block checksum mismatched");
-  }
-  return s;
-}
-
-Status BlockBasedTable::TryReadPropertiesWithGlobalSeqno(
-    FilePrefetchBuffer* prefetch_buffer, const Slice& handle_value,
-    TableProperties** table_properties) {
-  assert(table_properties != nullptr);
-  // If this is an external SST file ingested with write_global_seqno set to
-  // true, then we expect the checksum mismatch because checksum was written
-  // by SstFileWriter, but its global seqno in the properties block may have
-  // been changed during ingestion. In this case, we read the properties
-  // block, copy it to a memory buffer, change the global seqno to its
-  // original value, i.e. 0, and verify the checksum again.
-  BlockHandle props_block_handle;
-  CacheAllocationPtr tmp_buf;
-  Status s = ReadProperties(handle_value, rep_->file.get(), prefetch_buffer,
-                            rep_->footer, rep_->ioptions, table_properties,
-                            false /* verify_checksum */, &props_block_handle,
-                            &tmp_buf, false /* compression_type_missing */,
-                            nullptr /* memory_allocator */);
-  if (s.ok() && tmp_buf) {
-    const auto seqno_pos_iter =
-        (*table_properties)
-            ->properties_offsets.find(
-                ExternalSstFilePropertyNames::kGlobalSeqno);
-    size_t block_size = static_cast<size_t>(props_block_handle.size());
-    if (seqno_pos_iter != (*table_properties)->properties_offsets.end()) {
-      uint64_t global_seqno_offset = seqno_pos_iter->second;
-      EncodeFixed64(
-          tmp_buf.get() + global_seqno_offset - props_block_handle.offset(), 0);
-    }
-    uint32_t value = DecodeFixed32(tmp_buf.get() + block_size + 1);
-    s = ROCKSDB_NAMESPACE::VerifyChecksum(rep_->footer.checksum(),
-                                          tmp_buf.get(), block_size + 1, value);
-  }
-  return s;
-}
 
 Status BlockBasedTable::ReadPropertiesBlock(
     FilePrefetchBuffer* prefetch_buffer, InternalIterator* meta_iter,
@@ -1378,10 +1326,6 @@ Status BlockBasedTable::ReadPropertiesBlock(
           false /* compression_type_missing */, nullptr /* memory_allocator */);
     }
 
-    if (s.IsCorruption()) {
-      s = TryReadPropertiesWithGlobalSeqno(prefetch_buffer, meta_iter->value(),
-                                           &table_properties);
-    }
     std::unique_ptr<TableProperties> props_guard;
     if (table_properties != nullptr) {
       props_guard.reset(table_properties);
@@ -2349,7 +2293,8 @@ void BlockBasedTable::RetrieveMultipleBlocks(
     // If current block is adjacent to the previous one, at the same time,
     // compression is enabled and there is no compressed cache, we combine
     // the two block read as one.
-    if (scratch != nullptr && prev_end == handle.offset()) {
+    // EDG: not supported
+    if (false && scratch != nullptr && prev_end == handle.offset()) {
       req_offset_for_block.emplace_back(prev_len);
       prev_len += block_size(handle);
     } else {
@@ -2419,6 +2364,10 @@ void BlockBasedTable::RetrieveMultipleBlocks(
       }
     }
 
+    if (s.ok()) {
+      s = DecryptBlock(*file->GetKey(), req.result, handle);
+    }
+
     BlockContents raw_block_contents;
     size_t cur_read_end = req_offset + block_size(handle);
     if (cur_read_end > req.result.size()) {
@@ -2446,21 +2395,6 @@ void BlockBasedTable::RetrieveMultipleBlocks(
 #ifndef NDEBUG
       raw_block_contents.is_raw_block = true;
 #endif
-      if (options.verify_checksums) {
-        PERF_TIMER_GUARD(block_checksum_time);
-        const char* data = req.result.data();
-        uint32_t expected =
-            DecodeFixed32(data + req_offset + handle.size() + 1);
-        // Since the scratch might be shared. the offset of the data block in
-        // the buffer might not be 0. req.result.data() only point to the
-        // begin address of each read request, we need to add the offset
-        // in each read request. Checksum is stored in the block trailer,
-        // which is handle.size() + 1.
-        s = ROCKSDB_NAMESPACE::VerifyChecksum(footer.checksum(),
-                                              req.result.data() + req_offset,
-                                              handle.size() + 1, expected);
-        TEST_SYNC_POINT_CALLBACK("RetrieveMultipleBlocks:VerifyChecksum", &s);
-      }
     }
 
     if (s.ok()) {
@@ -3976,13 +3910,7 @@ Status BlockBasedTable::VerifyChecksumInMetaBlocks(
         GetBlockTypeForMetaBlockByName(meta_block_name),
         UncompressionDict::GetEmptyDict(), rep_->persistent_cache_options);
     s = block_fetcher.ReadBlockContents();
-    if (s.IsCorruption() && meta_block_name == kPropertiesBlock) {
-      TableProperties* table_properties;
-      s = TryReadPropertiesWithGlobalSeqno(nullptr /* prefetch_buffer */,
-                                           index_iter->value(),
-                                           &table_properties);
-      delete table_properties;
-    }
+    // EDG: if we have a corruption, we don't try to re-read with global seqno
     if (!s.ok()) {
       break;
     }

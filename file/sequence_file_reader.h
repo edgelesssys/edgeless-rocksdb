@@ -13,13 +13,14 @@
 #include "port/port.h"
 #include "rocksdb/env.h"
 #include "rocksdb/file_system.h"
+#include "encrypted_file.h"
 
 namespace ROCKSDB_NAMESPACE {
 
 // SequentialFileReader is a wrapper on top of Env::SequentialFile. It handles
 // Buffered (i.e when page cache is enabled) and Direct (with O_DIRECT / page
 // cache disabled) reads appropriately, and also updates the IO stats.
-class SequentialFileReader {
+class SequentialFileReader : public edg::EncryptedFile {
  private:
   std::unique_ptr<FSSequentialFile> file_;
   std::string file_name_;

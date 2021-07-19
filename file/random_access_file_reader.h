@@ -17,6 +17,7 @@
 #include "rocksdb/listener.h"
 #include "rocksdb/rate_limiter.h"
 #include "util/aligned_buffer.h"
+#include "encrypted_file.h"
 
 namespace ROCKSDB_NAMESPACE {
 class Statistics;
@@ -28,7 +29,7 @@ class HistogramImpl;
 // - Rate limiting compaction reads.
 // - Notifying any interested listeners on the completion of a read.
 // - Updating IO stats.
-class RandomAccessFileReader {
+class RandomAccessFileReader : public edg::EncryptedFile {
  private:
 #ifndef ROCKSDB_LITE
   void NotifyOnFileReadFinish(uint64_t offset, size_t length,

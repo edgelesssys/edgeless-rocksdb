@@ -1,3 +1,9 @@
+// Copyright (c) Edgeless Systems GmbH.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
@@ -65,6 +71,9 @@ class BlockHandle {
   // Maximum encoding length of a BlockHandle
   enum { kMaxEncodedLength = 10 + 10 };
 
+  // EDG: get the block's encryption IV
+  edgeless::CBuffer GetEncIv() const;
+
  private:
   uint64_t offset_;
   uint64_t size_;
@@ -124,23 +133,9 @@ inline bool BlockBasedTableSupportedVersion(uint32_t version) {
 // end of every table file.
 class Footer {
  public:
-  // Constructs a footer without specifying its table magic number.
-  // In such case, the table magic number of such footer should be
-  // initialized via @ReadFooterFromFile().
-  // Use this when you plan to load Footer with DecodeFrom(). Never use this
-  // when you plan to EncodeTo.
-  Footer() : Footer(kInvalidTableMagicNumber, 0) {}
-
-  // Use this constructor when you plan to write out the footer using
-  // EncodeTo(). Never use this constructor with DecodeFrom().
-  Footer(uint64_t table_magic_number, uint32_t version);
-
   // The version of the footer in this file
-  uint32_t version() const { return version_; }
-
-  // The checksum type used in this file
-  ChecksumType checksum() const { return checksum_; }
-  void set_checksum(const ChecksumType c) { checksum_ = c; }
+  // EDG: we just return the latest (?) version; no support for legacy formats
+  uint32_t version() const { return 4; }
 
   // The block handle for the metaindex block of the table
   const BlockHandle& metaindex_handle() const { return metaindex_handle_; }
@@ -151,32 +146,19 @@ class Footer {
 
   void set_index_handle(const BlockHandle& h) { index_handle_ = h; }
 
-  uint64_t table_magic_number() const { return table_magic_number_; }
+  // EDG TODO: remove; we don't use magic numbers
+  uint64_t table_magic_number() const { return 0; }
 
-  void EncodeTo(std::string* dst) const;
+  void EncodeTo(std::string* dst, edg::EncryptedWritableFile& file) const;
 
   // Set the current footer based on the input slice.
-  //
-  // REQUIRES: table_magic_number_ is not set (i.e.,
-  // HasInitializedTableMagicNumber() is true). The function will initialize the
-  // magic number
-  Status DecodeFrom(Slice* input);
+  Status DecodeFrom(Slice* input, edg::EncryptedFile& file);
 
-  // Encoded length of a Footer.  Note that the serialization of a Footer will
-  // always occupy at least kMinEncodedLength bytes.  If fields are changed
-  // the version number should be incremented and kMaxEncodedLength should be
-  // increased accordingly.
-  enum {
-    // Footer version 0 (legacy) will always occupy exactly this many bytes.
-    // It consists of two block handles, padding, and a magic number.
-    kVersion0EncodedLength = 2 * BlockHandle::kMaxEncodedLength + 8,
-    // Footer of versions 1 and higher will always occupy exactly this many
-    // bytes. It consists of the checksum type, two block handles, padding,
-    // a version number (bigger than 1), and a magic number
-    kNewVersionsEncodedLength = 1 + 2 * BlockHandle::kMaxEncodedLength + 4 + 8,
-    kMinEncodedLength = kVersion0EncodedLength,
-    kMaxEncodedLength = kNewVersionsEncodedLength,
-  };
+  static constexpr size_t kSizeHandles = 2 * BlockHandle::kMaxEncodedLength;
+  // EDG: length of two encoded block handles and one AES-GCM tag
+  static constexpr size_t kSize = kSizeHandles +
+                                  edgeless::crypto::Key::kSizeTag +
+                                  sizeof(edg::EncryptedFile::Nonce);
 
   static const uint64_t kInvalidTableMagicNumber = 0;
 
@@ -184,23 +166,13 @@ class Footer {
   std::string ToString() const;
 
  private:
-  // REQUIRES: magic number wasn't initialized.
-  void set_table_magic_number(uint64_t magic_number) {
-    assert(!HasInitializedTableMagicNumber());
-    table_magic_number_ = magic_number;
-  }
-
-  // return true if @table_magic_number_ is set to a value different
-  // from @kInvalidTableMagicNumber.
-  bool HasInitializedTableMagicNumber() const {
-    return (table_magic_number_ != kInvalidTableMagicNumber);
-  }
-
-  uint32_t version_;
-  ChecksumType checksum_;
   BlockHandle metaindex_handle_;
   BlockHandle index_handle_;
-  uint64_t table_magic_number_ = 0;
+
+  // EDG: fixed 96-bit IV for encryption of footer.
+  // We have this to avoid ambiguity with index-based IV used for blocks.
+  // The footer is the basis of indexing within a file.
+  static constexpr std::array<uint8_t, 12> kIv{"footer12345"};
 };
 
 // Read the footer from file
@@ -211,8 +183,15 @@ Status ReadFooterFromFile(RandomAccessFileReader* file,
                           uint64_t file_size, Footer* footer,
                           uint64_t enforce_table_magic_number = 0);
 
-// 1-byte type + 32-bit crc
-static const size_t kBlockTrailerSize = 5;
+#pragma pack(push, 1)
+struct BlockTrailer {
+  // Gets encrypted together with block contents
+  CompressionType type;
+  // The AES-GCM tag for block contents + type
+  edgeless::crypto::Tag tag;
+};
+#pragma pack(pop)
+static const size_t kBlockTrailerSize = sizeof(BlockTrailer);
 
 // Make block size calculation for IO less error prone
 inline uint64_t block_size(const BlockHandle& handle) {

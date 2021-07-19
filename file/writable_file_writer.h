@@ -19,6 +19,7 @@
 #include "rocksdb/rate_limiter.h"
 #include "test_util/sync_point.h"
 #include "util/aligned_buffer.h"
+#include "encrypted_file.h"
 
 namespace ROCKSDB_NAMESPACE {
 class Statistics;
@@ -30,7 +31,7 @@ class Statistics;
 // - Flush and Sync the data to the underlying filesystem.
 // - Notify any interested listeners on the completion of a write.
 // - Update IO stats.
-class WritableFileWriter {
+class WritableFileWriter : public edg::EncryptedWritableFile {
  private:
 #ifndef ROCKSDB_LITE
   void NotifyOnFileWriteFinish(uint64_t offset, size_t length,

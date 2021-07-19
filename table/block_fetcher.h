@@ -104,6 +104,6 @@ class BlockFetcher {
   void GetBlockContents();
   void InsertCompressedBlockToPersistentCacheIfNeeded();
   void InsertUncompressedBlockToPersistentCacheIfNeeded();
-  void CheckBlockChecksum();
+  void Decrypt();
 };
 }  // namespace ROCKSDB_NAMESPACE
