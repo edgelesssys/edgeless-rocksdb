@@ -3445,12 +3445,14 @@ TEST_F(DBTest, FIFOCompactionWithTTLAndVariousTableFormatsTest) {
   ASSERT_OK(TryReopen(options));
 
   Destroy(options);
+#ifndef EDG_NO_ALTERNATIVE_TABLES
   options.table_factory.reset(NewPlainTableFactory());
   ASSERT_TRUE(TryReopen(options).IsNotSupported());
 
   Destroy(options);
   options.table_factory.reset(NewAdaptiveTableFactory());
   ASSERT_TRUE(TryReopen(options).IsNotSupported());
+#endif
 }
 
 TEST_F(DBTest, FIFOCompactionWithTTLTest) {
@@ -3759,7 +3761,9 @@ TEST_F(DBTest, TableOptionsSanitizeTest) {
   DestroyAndReopen(options);
   ASSERT_EQ(db_->GetOptions().allow_mmap_reads, false);
 
+#ifndef EDG_NO_ALTERNATIVE_TABLES
   options.table_factory.reset(new PlainTableFactory());
+#endif
   options.prefix_extractor.reset(NewNoopTransform());
   Destroy(options);
   ASSERT_TRUE(!TryReopen(options).IsNotSupported());

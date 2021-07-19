@@ -603,7 +603,7 @@ set(SOURCES
         options/options_parser.cc
         options/options_sanity_check.cc
         port/stack_trace.cc
-        table/adaptive/adaptive_table_factory.cc
+        #table/adaptive/adaptive_table_factory.cc
         table/block_based/block.cc
         table/block_based/block_based_filter_block.cc
         table/block_based/block_based_table_builder.cc
@@ -622,21 +622,21 @@ set(SOURCES
         table/block_based/partitioned_filter_block.cc
         table/block_based/uncompression_dict_reader.cc
         table/block_fetcher.cc
-        table/cuckoo/cuckoo_table_builder.cc
-        table/cuckoo/cuckoo_table_factory.cc
-        table/cuckoo/cuckoo_table_reader.cc
+        #table/cuckoo/cuckoo_table_builder.cc
+        #table/cuckoo/cuckoo_table_factory.cc
+        #table/cuckoo/cuckoo_table_reader.cc
         table/format.cc
         table/get_context.cc
         table/iterator.cc
         table/merging_iterator.cc
         table/meta_blocks.cc
         table/persistent_cache_helper.cc
-        table/plain/plain_table_bloom.cc
-        table/plain/plain_table_builder.cc
-        table/plain/plain_table_factory.cc
-        table/plain/plain_table_index.cc
-        table/plain/plain_table_key_coding.cc
-        table/plain/plain_table_reader.cc
+        #table/plain/plain_table_bloom.cc
+        #table/plain/plain_table_builder.cc
+        #table/plain/plain_table_factory.cc
+        #table/plain/plain_table_index.cc
+        #table/plain/plain_table_key_coding.cc
+        #table/plain/plain_table_reader.cc
         table/sst_file_reader.cc
         table/sst_file_writer.cc
         table/table_properties.cc
@@ -927,7 +927,8 @@ if(WITH_TESTS)
         db/compaction/compaction_picker_test.cc
         db/comparator_db_test.cc
         db/corruption_test.cc
-        db/cuckoo_table_db_test.cc
+        # MODIFIED TEST: don't support cuckoo
+        #db/cuckoo_table_db_test.cc
         db/db_basic_test.cc
         db/db_blob_index_test.cc
         db/db_block_cache_test.cc
@@ -976,7 +977,7 @@ if(WITH_TESTS)
         db/merge_test.cc
         db/options_file_test.cc
         db/perf_context_test.cc
-        db/plain_table_db_test.cc
+        #db/plain_table_db_test.cc
         db/prefix_test.cc
         db/range_del_aggregator_test.cc
         db/range_tombstone_fragmenter_test.cc
@@ -1012,7 +1013,7 @@ if(WITH_TESTS)
         table/block_based/full_filter_block_test.cc
         table/block_based/partitioned_filter_block_test.cc
         table/cleanable_test.cc
-        table/cuckoo/cuckoo_table_builder_test.cc
+        #table/cuckoo/cuckoo_table_builder_test.cc
         table/cuckoo/cuckoo_table_reader_test.cc
         table/merger_test.cc
         table/sst_file_reader_test.cc
@@ -1123,10 +1124,6 @@ if(WITH_TESTS)
   if(ROCKSDB_LIB_FOR_C)
     set(C_TESTS db/c_test.c)
     # C executables must link to a shared object
-    add_executable(c_test db/c_test.c)
-    target_link_libraries(c_test ${ROCKSDB_SHARED_LIB} testharness)
-    add_test(NAME c_test COMMAND c_test${ARTIFACT_SUFFIX})
-    add_dependencies(check c_test)
   endif()
 endif()
 
@@ -1168,6 +1165,9 @@ if(WITH_BENCHMARK_TOOLS)
   target_link_libraries(hash_table_bench
     ${ROCKSDB_LIB})
 endif()
+
+# EDG: Disable adaptive, cuckoo, and plain tables
+add_compile_definitions(EDG_NO_ALTERNATIVE_TABLES)
 
 option(WITH_TOOLS "build with tools" ON)
 if(WITH_TOOLS)

@@ -56,6 +56,10 @@
 #include "util/string_util.h"
 #include "utilities/merge_operators.h"
 
+#ifdef EDG_NO_ALTERNATIVE_TABLES
+#define ROCKSDB_LITE
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 extern const uint64_t kLegacyBlockBasedTableMagicNumber;

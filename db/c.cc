@@ -2084,6 +2084,7 @@ void rocksdb_options_set_block_based_table_factory(
   }
 }
 
+#ifndef EDG_NO_ALTERNATIVE_TABLES
 rocksdb_cuckoo_table_options_t*
 rocksdb_cuckoo_options_create() {
   return new rocksdb_cuckoo_table_options_t;
@@ -2127,6 +2128,7 @@ void rocksdb_options_set_cuckoo_table_factory(
         ROCKSDB_NAMESPACE::NewCuckooTableFactory(table_options->rep));
   }
 }
+#endif
 
 void rocksdb_set_options(
     rocksdb_t* db, int count, const char* const keys[], const char* const values[], char** errptr) {
@@ -2677,6 +2679,7 @@ void rocksdb_options_set_hash_link_list_rep(
       ROCKSDB_NAMESPACE::NewHashLinkListRepFactory(bucket_count));
 }
 
+#ifndef EDG_NO_ALTERNATIVE_TABLES
 void rocksdb_options_set_plain_table_factory(
     rocksdb_options_t *opt, uint32_t user_key_len, int bloom_bits_per_key,
     double hash_table_ratio, size_t index_sparseness) {
@@ -2690,6 +2693,7 @@ void rocksdb_options_set_plain_table_factory(
       ROCKSDB_NAMESPACE::NewPlainTableFactory(options);
   opt->rep.table_factory.reset(factory);
 }
+#endif
 
 void rocksdb_options_set_max_successive_merges(
     rocksdb_options_t* opt, size_t v) {

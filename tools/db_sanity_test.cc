@@ -20,6 +20,10 @@
 #include "port/port.h"
 #include "util/string_util.h"
 
+#ifdef EDG_NO_ALTERNATIVE_TABLES
+#define ROCKSDB_LITE
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 class SanityTest {

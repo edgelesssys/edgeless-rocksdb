@@ -2285,9 +2285,11 @@ TEST_P(TransactionTest, FlushTest2) {
         options.table_factory.reset(new mock::MockTableFactory());
         break;
       case 2: {
+#ifndef EDG_NO_ALTERNATIVE_TABLES
         PlainTableOptions pt_opts;
         pt_opts.hash_table_ratio = 0;
         options.table_factory.reset(NewPlainTableFactory(pt_opts));
+#endif
         break;
       }
     }

@@ -355,6 +355,7 @@ Options DBTestBase::GetOptions(
       options.allow_concurrent_memtable_write = false;
       options.unordered_write = false;
       break;
+#ifndef EDG_NO_ALTERNATIVE_TABLES
     case kPlainTableFirstBytePrefix:
       options.table_factory.reset(new PlainTableFactory());
       options.prefix_extractor.reset(NewFixedPrefixTransform(1));
@@ -383,6 +384,7 @@ Options DBTestBase::GetOptions(
       options.max_sequential_skip_in_iterations = 999999;
       set_block_based_table_factory = false;
       break;
+#endif
     case kVectorRep:
       options.memtable_factory.reset(new VectorRepFactory(100));
       options.allow_concurrent_memtable_write = false;

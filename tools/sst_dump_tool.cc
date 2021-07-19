@@ -305,7 +305,9 @@ Status SstFileDumper::SetTableOptionsByMagicNumber(
         options_.prefix_extractor.reset(NewNoopTransform());
       }
     }
-  } else if (table_magic_number == kPlainTableMagicNumber ||
+  }
+#ifndef EDG_NO_ALTERNATIVE_TABLES
+  else if (table_magic_number == kPlainTableMagicNumber ||
              table_magic_number == kLegacyPlainTableMagicNumber) {
     options_.allow_mmap_reads = true;
 
@@ -320,7 +322,9 @@ Status SstFileDumper::SetTableOptionsByMagicNumber(
 
     options_.table_factory.reset(NewPlainTableFactory(plain_table_options));
     fprintf(stdout, "Sst file format: plain table\n");
-  } else {
+  }
+#endif
+  else {
     char error_msg_buffer[80];
     snprintf(error_msg_buffer, sizeof(error_msg_buffer) - 1,
              "Unsupported table magic number --- %lx",

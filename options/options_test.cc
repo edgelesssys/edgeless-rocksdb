@@ -39,6 +39,10 @@ using GFLAGS_NAMESPACE::ParseCommandLineFlags;
 DEFINE_bool(enable_print, false, "Print options generated to console.");
 #endif  // GFLAGS
 
+#ifdef EDG_NO_ALTERNATIVE_TABLES
+#define ROCKSDB_LITE
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 class OptionsTest : public testing::Test {};

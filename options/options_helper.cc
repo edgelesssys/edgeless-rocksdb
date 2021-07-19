@@ -1010,7 +1010,9 @@ Status ParseColumnFamilyOption(const std::string& name,
             "unable to parse the specified CF option " + name);
       }
       new_options->table_factory.reset(NewBlockBasedTableFactory(table_opt));
-    } else if (name == "plain_table_factory") {
+    }
+#ifndef EDG_NO_ALTERNATIVE_TABLES
+    else if (name == "plain_table_factory") {
       // Nested options
       PlainTableOptions table_opt, base_table_options;
       PlainTableFactory* plain_table_factory =
@@ -1035,7 +1037,9 @@ Status ParseColumnFamilyOption(const std::string& name,
             "unable to parse the specified CF option " + name);
       }
       new_options->memtable_factory.reset(new_mem_factory.release());
-    } else if (name == "bottommost_compression_opts") {
+    }
+#endif
+    else if (name == "bottommost_compression_opts") {
       Status s = ParseCompressionOptions(
           value, name, new_options->bottommost_compression_opts);
       if (!s.ok()) {
@@ -1390,7 +1394,9 @@ Status GetTableFactoryFromMap(
     }
     table_factory->reset(new BlockBasedTableFactory(bbt_opt));
     return Status::OK();
-  } else if (factory_name == PlainTableFactory().Name()) {
+  }
+#ifndef EDG_NO_ALTERNATIVE_TABLES
+  else if (factory_name == PlainTableFactory().Name()) {
     PlainTableOptions pt_opt;
     s = GetPlainTableOptionsFromMap(PlainTableOptions(), opt_map, &pt_opt,
                                     true, /* input_strings_escaped */
@@ -1401,6 +1407,7 @@ Status GetTableFactoryFromMap(
     table_factory->reset(new PlainTableFactory(pt_opt));
     return Status::OK();
   }
+#endif
   // Return OK for not supported table factories as TableFactory
   // Deserialization is optional.
   table_factory->reset();

@@ -12,6 +12,10 @@
 #include "rocksdb/perf_context.h"
 #include "table/block_based/filter_policy_internal.h"
 
+#ifdef EDG_NO_ALTERNATIVE_TABLES
+#define ROCKSDB_LITE
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 namespace {

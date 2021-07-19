@@ -113,7 +113,7 @@ TEST_F(OptionsUtilTest, SaveAndLoadWithCacheCheck) {
   cf_opts.push_back(cf_opt_sample);
 
   ColumnFamilyOptions cf_opt_plain_table_opt = ColumnFamilyOptions();
-  cf_opt_plain_table_opt.table_factory.reset(NewPlainTableFactory());
+  cf_opt_plain_table_opt.table_factory.reset(NewBlockBasedTableFactory());
   cf_opts.push_back(cf_opt_plain_table_opt);
 
   std::vector<std::string> cf_names;

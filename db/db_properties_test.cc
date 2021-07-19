@@ -1602,6 +1602,7 @@ TEST_F(DBPropertiesTest, BlockCacheProperties) {
 
   // Block cache properties are not available for tables other than
   // block-based table.
+#ifndef EDG_NO_ALTERNATIVE_TABLES
   options.table_factory.reset(NewPlainTableFactory());
   Reopen(options);
   ASSERT_FALSE(
@@ -1617,6 +1618,7 @@ TEST_F(DBPropertiesTest, BlockCacheProperties) {
   ASSERT_FALSE(db_->GetIntProperty(DB::Properties::kBlockCacheUsage, &value));
   ASSERT_FALSE(
       db_->GetIntProperty(DB::Properties::kBlockCachePinnedUsage, &value));
+#endif
 
   // Block cache properties are not available if block cache is not used.
   BlockBasedTableOptions table_options;

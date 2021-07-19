@@ -21,6 +21,10 @@
 #include "file/writable_file_writer.h"
 #include "port/port.h"
 
+#ifdef EDG_NO_ALTERNATIVE_TABLES
+#define ROCKSDB_LITE
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 namespace test {
 

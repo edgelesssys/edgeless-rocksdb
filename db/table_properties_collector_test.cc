@@ -25,6 +25,10 @@
 #include "test_util/testutil.h"
 #include "util/coding.h"
 
+#ifdef EDG_NO_ALTERNATIVE_TABLES
+#define ROCKSDB_LITE
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 class TablePropertiesTest : public testing::Test,

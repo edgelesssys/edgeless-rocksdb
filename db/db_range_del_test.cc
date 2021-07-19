@@ -26,7 +26,7 @@ class DBRangeDelTest : public DBTestBase {
 
 // PlainTableFactory, WriteBatchWithIndex, and NumTableFilesAtLevel() are not
 // supported in ROCKSDB_LITE
-#ifndef ROCKSDB_LITE
+#if !defined ROCKSDB_LITE && !defined EDG_NO_ALTERNATIVE_TABLES
 TEST_F(DBRangeDelTest, NonBlockBasedTableNotSupported) {
   // TODO: figure out why MmapReads trips the iterator pinning assertion in
   // RangeDelAggregator. Ideally it would be supported; otherwise it should at
