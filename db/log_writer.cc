@@ -1,3 +1,9 @@
+// Copyright (c) Edgeless Systems GmbH.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
@@ -23,7 +29,6 @@ Writer::Writer(std::unique_ptr<WritableFileWriter>&& dest, uint64_t log_number,
     : dest_(std::move(dest)),
       block_offset_(0),
       log_number_(log_number),
-      recycle_log_files_(recycle_log_files),
       manual_flush_(manual_flush) {
   for (int i = 0; i <= kMaxRecordType; i++) {
     char t = static_cast<char>(i);
@@ -49,12 +54,24 @@ Status Writer::Close() {
 }
 
 Status Writer::AddRecord(const Slice& slice) {
+  // EDG: is this the first time we're adding a record? If so, we need to
+  // generate a key and write the "nonce record" first.
+  if (index_ == 0) {
+    dest_->CreateKey();
+    auto nonce = dest_->GetNonce();
+    const auto s = AddRecordInternal(
+        {reinterpret_cast<const char*>(nonce->data()), nonce->size()});
+    if (!s.ok()) return s;
+  }
+  return AddRecordInternal(slice);
+}
+
+Status Writer::AddRecordInternal(const Slice& slice) {
   const char* ptr = slice.data();
   size_t left = slice.size();
 
   // Header size varies depending on whether we are recycling or not.
-  const int header_size =
-      recycle_log_files_ ? kRecyclableHeaderSize : kHeaderSize;
+  const int header_size = sizeof(EncHeader);
 
   // Fragment the record if necessary and emit it.  Note that if slice
   // is empty, we still want to iterate once to emit a single
@@ -67,11 +84,10 @@ Status Writer::AddRecord(const Slice& slice) {
     if (leftover < header_size) {
       // Switch to a new block
       if (leftover > 0) {
-        // Fill the trailer (literal below relies on kHeaderSize and
-        // kRecyclableHeaderSize being <= 11)
-        assert(header_size <= 11);
-        s = dest_->Append(Slice("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-                                static_cast<size_t>(leftover)));
+        // Fill the trailer
+        constexpr std::array<char, header_size> nullbytes{};
+        s = dest_->Append(
+            Slice(nullbytes.data(), static_cast<size_t>(leftover)));
         if (!s.ok()) {
           break;
         }
@@ -116,45 +132,32 @@ bool Writer::TEST_BufferIsEmpty() { return dest_->TEST_BufferIsEmpty(); }
 
 Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n) {
   assert(n <= 0xffff);  // Must fit in two bytes
+  block_offset_ += sizeof(EncHeader) + n;
 
-  size_t header_size;
-  char buf[kRecyclableHeaderSize];
+  EncHeader header;
+  header.meta.length = n;
+  header.meta.type = t;
 
-  // Format the header
-  buf[4] = static_cast<char>(n & 0xff);
-  buf[5] = static_cast<char>(n >> 8);
-  buf[6] = static_cast<char>(t);
-
-  uint32_t crc = type_crc_[t];
-  if (t < kRecyclableFullType) {
-    // Legacy record format
-    assert(block_offset_ + kHeaderSize + n <= kBlockSize);
-    header_size = kHeaderSize;
+  Status s;
+  if (!index_) {
+    // zero-out the tag
+    header.tag.fill(0);
+    s = dest_->Append({reinterpret_cast<const char*>(&header), sizeof(header)});
+    if (!s.ok()) return s;
+    s = dest_->Append({ptr, n});  // write "nonce record"
   } else {
-    // Recyclable record format
-    assert(block_offset_ + kRecyclableHeaderSize + n <= kBlockSize);
-    header_size = kRecyclableHeaderSize;
-
-    // Only encode low 32-bits of the 64-bit log number.  This means
-    // we will fail to detect an old record if we recycled a log from
-    // ~4 billion logs ago, but that is effectively impossible, and
-    // even if it were we'dbe far more likely to see a false positive
-    // on the 32-bit CRC.
-    EncodeFixed32(buf + 7, static_cast<uint32_t>(log_number_));
-    crc = crc32c::Extend(crc, buf + 7, 4);
+    std::vector<uint8_t> ciphertext(n);
+    decltype(auto) key = dest_->GetKey();
+    key->Encrypt({reinterpret_cast<const uint8_t*>(ptr), n},  // plaintext
+                 edgeless::ToCBuffer(index_),                 // iv
+                 edgeless::ToCBuffer(header.meta),            // aad
+                 header.tag, ciphertext);
+    s = dest_->Append({reinterpret_cast<const char*>(&header), sizeof(header)});
+    if (!s.ok()) return s;
+    s = dest_->Append(
+        {reinterpret_cast<const char*>(ciphertext.data()), ciphertext.size()});
   }
-
-  // Compute the crc of the record type and the payload.
-  crc = crc32c::Extend(crc, ptr, n);
-  crc = crc32c::Mask(crc);  // Adjust for storage
-  EncodeFixed32(buf, crc);
-
-  // Write the header and the payload
-  Status s = dest_->Append(Slice(buf, header_size));
-  if (s.ok()) {
-    s = dest_->Append(Slice(ptr, n));
-  }
-  block_offset_ += header_size + n;
+  if (s.ok()) index_++;
   return s;
 }
 

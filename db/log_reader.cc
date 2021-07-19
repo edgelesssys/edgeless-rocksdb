@@ -1,3 +1,9 @@
+// Copyright (c) Edgeless Systems GmbH.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
@@ -37,11 +43,28 @@ Reader::Reader(std::shared_ptr<Logger> info_log,
       eof_offset_(0),
       last_record_offset_(0),
       end_of_buffer_offset_(0),
-      log_number_(log_num),
-      recycled_(false) {}
+      log_number_(log_num) {}
 
 Reader::~Reader() {
   delete[] backing_store_;
+}
+
+bool Reader::ReadRecord(Slice* record, std::string* scratch,
+                        WALRecoveryMode wal_recovery_mode) {
+  // EDG: is this the first time we're reading a record? If so, we need to read
+  // the "nonce record" first and derive the key.
+  if (index_ == 0) {
+    std::string nonce_scratch;
+    nonce_scratch.resize(edg::EncryptedFile::kDefaultNonceSize);
+    Slice nonce;
+    if (!ReadRecordInternal(&nonce, &nonce_scratch,
+                            WALRecoveryMode::kAbsoluteConsistency))
+      return false;
+    if (nonce.size() != edg::EncryptedFile::kDefaultNonceSize) return false;
+    file_->CreateKey(
+        {reinterpret_cast<const uint8_t*>(nonce.data()), nonce.size()});
+  }
+  return ReadRecordInternal(record, scratch, wal_recovery_mode);
 }
 
 // For kAbsoluteConsistency, on clean shutdown we don't expect any error
@@ -51,7 +74,12 @@ Reader::~Reader() {
 //
 // TODO krad: Evaluate if we need to move to a more strict mode where we
 // restrict the inconsistency to only the last log
-bool Reader::ReadRecord(Slice* record, std::string* scratch,
+//
+// EDG TODO: we should always enforce kAbsoluteConsistency (after clean
+// shutdown) or kTolerateCorruptedTailRecords (after crash).
+//  We probably have this, because we abort on errors (see 'return false'
+//  statements in the switches).
+bool Reader::ReadRecordInternal(Slice* record, std::string* scratch,
                         WALRecoveryMode wal_recovery_mode) {
   scratch->clear();
   record->clear();
@@ -118,6 +146,9 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch,
         }
         break;
 
+      /*
+      EDG: Error cases follow; we abort (return false) on any of these.
+      */
       case kBadHeader:
         if (wal_recovery_mode == WALRecoveryMode::kAbsoluteConsistency) {
           // in clean shutdown we don't expect any error in the log files
@@ -161,7 +192,7 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch,
           in_fragmented_record = false;
           scratch->clear();
         }
-        break;
+        return false;
 
       case kBadRecordLen:
       case kBadRecordChecksum:
@@ -181,7 +212,7 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch,
           in_fragmented_record = false;
           scratch->clear();
         }
-        break;
+        return false;
 
       default: {
         char buf[40];
@@ -191,7 +222,7 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch,
             buf);
         in_fragmented_record = false;
         scratch->clear();
-        break;
+        return false;
       }
     }
   }
@@ -310,10 +341,39 @@ bool Reader::ReadMore(size_t* drop_size, int *error) {
   }
 }
 
+const EncHeader& Reader::GetHeader() const {
+  assert(buffer_.size() >= sizeof(EncHeader));
+  return *reinterpret_cast<const EncHeader*>(buffer_.data());
+}
+
+// Assumes that buffer_ is large enough
+bool Reader::DecryptRecord() {
+  // Don't decrypt at index 0 (this is the nonce)
+  if (!index_) {
+    index_++;
+    return true;
+  }
+  auto& header = GetHeader();
+  assert(header.meta.length + sizeof(header) <= buffer_.size());
+  auto const start_payload = buffer_.data() + sizeof(header);
+  // We need to decrypt in-place and thus unfortunately need a const cast here
+  auto payload = edgeless::Buffer(
+      const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(start_payload)),
+      header.meta.length);
+  auto key = file_->GetKey();
+  const auto succ = key->Decrypt(payload,
+                                 edgeless::ToCBuffer(index_),       // iv
+                                 edgeless::ToCBuffer(header.meta),  // aad
+                                 header.tag, payload);
+  index_++;
+  return succ;
+}
+
 unsigned int Reader::ReadPhysicalRecord(Slice* result, size_t* drop_size) {
+  constexpr auto header_size = sizeof(EncHeader);
   while (true) {
     // We need at least the minimum header size
-    if (buffer_.size() < static_cast<size_t>(kHeaderSize)) {
+    if (buffer_.size() < header_size) {
       // the default value of r is meaningless because ReadMore will overwrite
       // it if it returns false; in case it returns true, the return value will
       // not be used anyway
@@ -324,32 +384,8 @@ unsigned int Reader::ReadPhysicalRecord(Slice* result, size_t* drop_size) {
       continue;
     }
 
-    // Parse the header
-    const char* header = buffer_.data();
-    const uint32_t a = static_cast<uint32_t>(header[4]) & 0xff;
-    const uint32_t b = static_cast<uint32_t>(header[5]) & 0xff;
-    const unsigned int type = header[6];
-    const uint32_t length = a | (b << 8);
-    int header_size = kHeaderSize;
-    if (type >= kRecyclableFullType && type <= kRecyclableLastType) {
-      if (end_of_buffer_offset_ - buffer_.size() == 0) {
-        recycled_ = true;
-      }
-      header_size = kRecyclableHeaderSize;
-      // We need enough for the larger header
-      if (buffer_.size() < static_cast<size_t>(kRecyclableHeaderSize)) {
-        int r = kEof;
-        if (!ReadMore(drop_size, &r)) {
-          return r;
-        }
-        continue;
-      }
-      const uint32_t log_num = DecodeFixed32(header + 7);
-      if (log_num != log_number_) {
-        return kOldRecord;
-      }
-    }
-    if (header_size + length > buffer_.size()) {
+    auto& header = GetHeader();
+    if (header_size + header.meta.length > buffer_.size()) {
       *drop_size = buffer_.size();
       buffer_.clear();
       if (!eof_) {
@@ -364,7 +400,14 @@ unsigned int Reader::ReadPhysicalRecord(Slice* result, size_t* drop_size) {
       return kEof;
     }
 
-    if (type == kZeroType && length == 0) {
+    if (!DecryptRecord()) {
+      *drop_size = buffer_.size();
+      buffer_.clear();
+      return kBadRecordChecksum;
+    }
+
+    // EDG TODO: do we need the following?
+    if (header.meta.type == kZeroType && header.meta.length == 0) {
       // Skip zero length record without reporting any drops since
       // such records are produced by the mmap based writing code in
       // env_posix.cc that preallocates file regions.
@@ -374,29 +417,13 @@ unsigned int Reader::ReadPhysicalRecord(Slice* result, size_t* drop_size) {
       return kBadRecord;
     }
 
-    // Check crc
-    if (checksum_) {
-      uint32_t expected_crc = crc32c::Unmask(DecodeFixed32(header));
-      uint32_t actual_crc = crc32c::Value(header + 6, length + header_size - 6);
-      if (actual_crc != expected_crc) {
-        // Drop the rest of the buffer since "length" itself may have
-        // been corrupted and if we trust it, we could find some
-        // fragment of a real log record that just happens to look
-        // like a valid log record.
-        *drop_size = buffer_.size();
-        buffer_.clear();
-        return kBadRecordChecksum;
-      }
-    }
-
-    buffer_.remove_prefix(header_size + length);
-
-    *result = Slice(header + header_size, length);
-    return type;
+    *result = Slice(buffer_.data() + header_size, header.meta.length);
+    buffer_.remove_prefix(header_size + header.meta.length);
+    return header.meta.type;
   }
 }
 
-bool FragmentBufferedReader::ReadRecord(Slice* record, std::string* scratch,
+bool FragmentBufferedReader::ReadRecordInternal(Slice* record, std::string* scratch,
                                         WALRecoveryMode /*unused*/) {
   assert(record != nullptr);
   assert(scratch != nullptr);
@@ -458,6 +485,9 @@ bool FragmentBufferedReader::ReadRecord(Slice* record, std::string* scratch,
         }
         break;
 
+      /*
+      EDG: Error cases follow; we abort (return false) on any of these.
+      */
       case kBadHeader:
       case kBadRecord:
       case kEof:
@@ -467,7 +497,7 @@ bool FragmentBufferedReader::ReadRecord(Slice* record, std::string* scratch,
           in_fragmented_record_ = false;
           fragments_.clear();
         }
-        break;
+        return false;
 
       case kBadRecordChecksum:
         if (recycled_) {
@@ -480,7 +510,7 @@ bool FragmentBufferedReader::ReadRecord(Slice* record, std::string* scratch,
           in_fragmented_record_ = false;
           fragments_.clear();
         }
-        break;
+        return false;
 
       default: {
         char buf[40];
@@ -491,7 +521,7 @@ bool FragmentBufferedReader::ReadRecord(Slice* record, std::string* scratch,
             buf);
         in_fragmented_record_ = false;
         fragments_.clear();
-        break;
+        return false;
       }
     }
   }
@@ -557,35 +587,9 @@ bool FragmentBufferedReader::TryReadFragment(
       return false;
     }
   }
-  const char* header = buffer_.data();
-  const uint32_t a = static_cast<uint32_t>(header[4]) & 0xff;
-  const uint32_t b = static_cast<uint32_t>(header[5]) & 0xff;
-  const unsigned int type = header[6];
-  const uint32_t length = a | (b << 8);
-  int header_size = kHeaderSize;
-  if (type >= kRecyclableFullType && type <= kRecyclableLastType) {
-    if (end_of_buffer_offset_ - buffer_.size() == 0) {
-      recycled_ = true;
-    }
-    header_size = kRecyclableHeaderSize;
-    while (buffer_.size() < static_cast<size_t>(kRecyclableHeaderSize)) {
-      size_t old_size = buffer_.size();
-      int error = kEof;
-      if (!TryReadMore(drop_size, &error)) {
-        *fragment_type_or_err = error;
-        return false;
-      } else if (old_size == buffer_.size()) {
-        return false;
-      }
-    }
-    const uint32_t log_num = DecodeFixed32(header + 7);
-    if (log_num != log_number_) {
-      *fragment_type_or_err = kOldRecord;
-      return true;
-    }
-  }
 
-  while (header_size + length > buffer_.size()) {
+  auto& header = GetHeader();
+  while (sizeof(header) + header.meta.length > buffer_.size()) {
     size_t old_size = buffer_.size();
     int error = kEof;
     if (!TryReadMore(drop_size, &error)) {
@@ -596,27 +600,22 @@ bool FragmentBufferedReader::TryReadFragment(
     }
   }
 
-  if (type == kZeroType && length == 0) {
+  if (!DecryptRecord()) {
+    *drop_size = buffer_.size();
+    buffer_.clear();
+    *fragment_type_or_err = kBadRecordChecksum;
+    return true;
+  }
+
+  if (header.meta.type == kZeroType && header.meta.length == 0) {
     buffer_.clear();
     *fragment_type_or_err = kBadRecord;
     return true;
   }
 
-  if (checksum_) {
-    uint32_t expected_crc = crc32c::Unmask(DecodeFixed32(header));
-    uint32_t actual_crc = crc32c::Value(header + 6, length + header_size - 6);
-    if (actual_crc != expected_crc) {
-      *drop_size = buffer_.size();
-      buffer_.clear();
-      *fragment_type_or_err = kBadRecordChecksum;
-      return true;
-    }
-  }
-
-  buffer_.remove_prefix(header_size + length);
-
-  *fragment = Slice(header + header_size, length);
-  *fragment_type_or_err = type;
+  *fragment = Slice(buffer_.data() + sizeof(header), header.meta.length);
+  buffer_.remove_prefix(sizeof(header) + header.meta.length);
+  *fragment_type_or_err = header.meta.type;
   return true;
 }
 

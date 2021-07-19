@@ -1,3 +1,9 @@
+// Copyright (c) Edgeless Systems GmbH.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
@@ -96,7 +102,7 @@ class Writer {
   std::unique_ptr<WritableFileWriter> dest_;
   size_t block_offset_;       // Current offset in block
   uint64_t log_number_;
-  bool recycle_log_files_;
+  const bool recycle_log_files_ = false;  // EDG: we don't support recycling
 
   // crc32c values for all supported record types.  These are
   // pre-computed to reduce the overhead of computing the crc of the
@@ -108,6 +114,10 @@ class Writer {
   // If true, it does not flush after each write. Instead it relies on the upper
   // layer to manually does the flush by calling ::WriteBuffer()
   bool manual_flush_;
+
+ private:
+  Status AddRecordInternal(const Slice& slice);
+  uint64_t index_ = 0;
 };
 
 }  // namespace log

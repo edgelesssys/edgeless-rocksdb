@@ -1,3 +1,9 @@
+// Copyright (c) Edgeless Systems GmbH.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
@@ -63,7 +69,7 @@ class Reader {
   // "*scratch" as temporary storage.  The contents filled in *record
   // will only be valid until the next mutating operation on this
   // reader or the next mutation to *scratch.
-  virtual bool ReadRecord(Slice* record, std::string* scratch,
+  bool ReadRecord(Slice* record, std::string* scratch,
                           WALRecoveryMode wal_recovery_mode =
                               WALRecoveryMode::kTolerateCorruptedTailRecords);
 
@@ -122,7 +128,7 @@ class Reader {
   uint64_t const log_number_;
 
   // Whether this is a recycled log file
-  bool recycled_;
+  const bool recycled_ = false;  // EDG: we don't support recycling
 
   // Extend record types with the following special values
   enum {
@@ -154,6 +160,17 @@ class Reader {
   // buffer_ must be updated to remove the dropped bytes prior to invocation.
   void ReportCorruption(size_t bytes, const char* reason);
   void ReportDrop(size_t bytes, const Status& reason);
+
+ protected:
+  const EncHeader& GetHeader() const;
+  bool DecryptRecord();
+
+  virtual bool ReadRecordInternal(
+      Slice* record, std::string* scratch,
+      WALRecoveryMode wal_recovery_mode =
+          WALRecoveryMode::kTolerateCorruptedTailRecords);
+
+  uint64_t index_ = 0;
 };
 
 class FragmentBufferedReader : public Reader {
@@ -166,14 +183,16 @@ class FragmentBufferedReader : public Reader {
         fragments_(),
         in_fragmented_record_(false) {}
   ~FragmentBufferedReader() override {}
-  bool ReadRecord(Slice* record, std::string* scratch,
-                  WALRecoveryMode wal_recovery_mode =
-                      WALRecoveryMode::kTolerateCorruptedTailRecords) override;
   void UnmarkEOF() override;
 
  private:
   std::string fragments_;
   bool in_fragmented_record_;
+
+  bool ReadRecordInternal(
+      Slice* record, std::string* scratch,
+      WALRecoveryMode wal_recovery_mode =
+          WALRecoveryMode::kTolerateCorruptedTailRecords) override;
 
   bool TryReadFragment(Slice* result, size_t* drop_size,
                        unsigned int* fragment_type_or_err);

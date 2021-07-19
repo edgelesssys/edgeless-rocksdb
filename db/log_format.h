@@ -1,3 +1,9 @@
+// Copyright (c) Edgeless Systems GmbH.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
@@ -12,12 +18,14 @@
 
 #pragma once
 
+#include <edgeless/crypto.h>
+
 #include "rocksdb/rocksdb_namespace.h"
 
 namespace ROCKSDB_NAMESPACE {
 namespace log {
 
-enum RecordType {
+enum RecordType : uint8_t {
   // Zero is reserved for preallocated files
   kZeroType = 0,
   kFullType = 1,
@@ -37,8 +45,17 @@ static const int kMaxRecordType = kRecyclableLastType;
 
 static const unsigned int kBlockSize = 32768;
 
-// Header is checksum (4 bytes), length (2 bytes), type (1 byte)
-static const int kHeaderSize = 4 + 2 + 1;
+#pragma pack(push, 1)
+struct EncHeader {
+  edgeless::crypto::Tag tag;
+  struct {
+    uint16_t length;
+    RecordType type;
+  } meta;
+};
+#pragma pack(pop)
+
+static const int kHeaderSize = sizeof(EncHeader);
 
 // Recyclable header is checksum (4 bytes), length (2 bytes), type (1 byte),
 // log number (4 bytes).

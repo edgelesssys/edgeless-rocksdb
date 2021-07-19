@@ -284,7 +284,7 @@ TEST_F(CorruptionTest, Recovery) {
   Reopen(&options_);
 
   // The 64 records in the first two log blocks are completely lost.
-  Check(36, 36);
+  Check(0, 0);  // EDG: everything is lost after the first corruption
 }
 
 TEST_F(CorruptionTest, RecoverWriteError) {
