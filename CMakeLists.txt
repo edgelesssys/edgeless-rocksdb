@@ -963,8 +963,9 @@ if(WITH_TESTS)
         db/deletefile_test.cc
         db/error_handler_test.cc
         db/obsolete_files_test.cc
-        db/external_sst_file_basic_test.cc
-        db/external_sst_file_test.cc
+        # MODIFIED TEST: don't support ingestion of external files
+        #db/external_sst_file_basic_test.cc
+        #db/external_sst_file_test.cc
         db/fault_injection_test.cc
         db/file_indexer_test.cc
         db/filename_test.cc

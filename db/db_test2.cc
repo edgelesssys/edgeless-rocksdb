@@ -3859,6 +3859,8 @@ TEST_F(DBTest2, TestCompactFiles) {
   ASSERT_OK(sst_file_writer.Put("6", "6"));
   ASSERT_OK(sst_file_writer.Finish());
 
+// MODIFIED TEST: this tries to ingest files, which we don't support
+#if 0
   ASSERT_OK(db_->IngestExternalFile(handle, {external_file1, external_file3},
                                     IngestExternalFileOptions()));
   ASSERT_EQ(NumTableFilesAtLevel(1, 0), 2);
@@ -3877,6 +3879,7 @@ TEST_F(DBTest2, TestCompactFiles) {
 
   user_thread1.join();
   user_thread2.join();
+#endif
 
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();

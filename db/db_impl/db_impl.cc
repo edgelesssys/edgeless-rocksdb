@@ -3931,6 +3931,9 @@ Status DBImpl::IngestExternalFiles(
   if (args.empty()) {
     return Status::InvalidArgument("ingestion arg list is empty");
   }
+  // EDG: For now, we cannot ingest external files, because we derive a file's
+  // key from its name (i.e., id).
+  return Status::Aborted("no ingestion of encrypted files allowed");
   {
     std::unordered_set<ColumnFamilyHandle*> unique_cfhs;
     for (const auto& arg : args) {

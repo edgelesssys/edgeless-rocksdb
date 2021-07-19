@@ -4882,7 +4882,8 @@ TEST_F(DBCompactionTest, CompactionDuringShutdown) {
 // FixFileIngestionCompactionDeadlock tests and verifies that compaction and
 // file ingestion do not cause deadlock in the event of write stall triggered
 // by number of L0 files reaching level0_stop_writes_trigger.
-TEST_P(DBCompactionTestWithParam, FixFileIngestionCompactionDeadlock) {
+// MODIFIED TEST: disabled because we do not support ingesting encrypted files.
+TEST_P(DBCompactionTestWithParam, DISABLED_FixFileIngestionCompactionDeadlock) {
   const int kNumKeysPerFile = 100;
   // Generate SST files.
   Options options = CurrentOptions();
@@ -5046,7 +5047,9 @@ TEST_P(DBCompactionTestWithParam,
 
   // Ingest 5 L0 sst. And this files would trigger PickIntraL0Compaction.
   for (int i = 5; i < 10; i++) {
-    IngestOneKeyValue(dbfull(), Key(i), value, options);
+    // MODIFIED TEST: We do not support ingesting encrypted files.
+    ASSERT_OK(Put(Key(i), value));
+    ASSERT_OK(Flush());
     ASSERT_EQ(i + 1, NumTableFilesAtLevel(0));
   }
 
@@ -5066,8 +5069,9 @@ TEST_P(DBCompactionTestWithParam,
   ASSERT_OK(Flush());
 }
 
+// MODIFIED TEST: disabled because we do not support ingesting encrypted files.
 TEST_P(DBCompactionTestWithParam,
-       IntraL0CompactionAfterFlushCheckConsistencyFail) {
+       DISABLED_IntraL0CompactionAfterFlushCheckConsistencyFail) {
   Options options = CurrentOptions();
   options.force_consistency_checks = true;
   options.compression = kNoCompression;
