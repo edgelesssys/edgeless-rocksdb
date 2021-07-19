@@ -63,7 +63,7 @@ endif(CCACHE_FOUND)
 
 option(WITH_JEMALLOC "build with JeMalloc" OFF)
 option(WITH_SNAPPY "build with SNAPPY" OFF)
-option(WITH_LZ4 "build with lz4" OFF)
+option(WITH_LZ4 "build with lz4" ON)
 option(WITH_ZLIB "build with zlib" OFF)
 option(WITH_ZSTD "build with zstd" OFF)
 option(WITH_WINDOWS_UTF8_FILENAMES "use UTF8 as characterset for opening files, regardles of the system code page" OFF)
@@ -84,7 +84,7 @@ else()
 endif()
 
 include(CMakeDependentOption)
-CMAKE_DEPENDENT_OPTION(WITH_GFLAGS "build with GFlags" ON
+CMAKE_DEPENDENT_OPTION(WITH_GFLAGS "build with GFlags" OFF
   "NOT MSVC;NOT MINGW" OFF)
 
 if(MSVC)
@@ -191,7 +191,7 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-format -fno-asynchronous-unwind-tables")
     add_definitions(-D_POSIX_C_SOURCE=1)
   endif()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
     include(CheckCXXCompilerFlag)
@@ -806,7 +806,7 @@ target_link_libraries(${ROCKSDB_STATIC_LIB}
 if(ROCKSDB_BUILD_SHARED)
   add_library(${ROCKSDB_SHARED_LIB} SHARED ${SOURCES})
   target_link_libraries(${ROCKSDB_SHARED_LIB}
-    ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
+    PUBLIC ${THIRDPARTY_LIBS} ${SYSTEM_LIBS} PRIVATE edgeless_o)
 
   if(WIN32)
     set_target_properties(${ROCKSDB_SHARED_LIB} PROPERTIES
@@ -822,7 +822,7 @@ if(ROCKSDB_BUILD_SHARED)
                           LINKER_LANGUAGE CXX
                           VERSION ${rocksdb_VERSION}
                           SOVERSION ${rocksdb_VERSION_MAJOR}
-                          CXX_STANDARD 11
+                          CXX_STANDARD 17
                           OUTPUT_NAME "rocksdb")
   endif()
 endif()
@@ -1017,11 +1017,11 @@ if(WITH_TESTS)
         table/merger_test.cc
         table/sst_file_reader_test.cc
         table/table_test.cc
-        tools/block_cache_analyzer/block_cache_trace_analyzer_test.cc
+        #tools/block_cache_analyzer/block_cache_trace_analyzer_test.cc
         tools/ldb_cmd_test.cc
         tools/reduce_levels_test.cc
         tools/sst_dump_test.cc
-        tools/trace_analyzer_test.cc
+        #tools/trace_analyzer_test.cc
         util/autovector_test.cc
         util/bloom_test.cc
         util/coding_test.cc
@@ -1176,3 +1176,11 @@ if(WITH_TOOLS)
   add_custom_target(tools
     DEPENDS ${tool_deps})
 endif()
+
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# EDG: add libedgeless
+execute_process(COMMAND git submodule update --init --depth=1 libedgeless WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+set(LIBEDG_NOTEST ON)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libedgeless)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/libedgeless/include)

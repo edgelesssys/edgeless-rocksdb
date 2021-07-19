@@ -1,3 +1,6 @@
+This contains code that is from RocksDB, and that code is dual-licensed under both the
+GPLv2 (found in this file) and Apache 2.0 License (found in the LICENSE.rocksdb.Apache file).
+
                     GNU GENERAL PUBLIC LICENSE
                        Version 2, June 1991
 
