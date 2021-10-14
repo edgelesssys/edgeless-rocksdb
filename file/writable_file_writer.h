@@ -83,7 +83,8 @@ class WritableFileWriter : public edg::EncryptedWritableFile {
       Statistics* stats = nullptr,
       const std::vector<std::shared_ptr<EventListener>>& listeners = {},
       FileChecksumFunc* checksum_func = nullptr)
-      : writable_file_(std::move(file)),
+      : EncryptedWritableFile(_file_name),
+        writable_file_(std::move(file)),
         file_name_(_file_name),
         env_(env),
         buf_(),
