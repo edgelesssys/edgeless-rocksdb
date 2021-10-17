@@ -15,33 +15,37 @@ namespace rocksdb::edg {
 
 /** Base class for encrypted files.
  *
- * Holds a file-specific key derived from a nonce and the master key.
- * The master key is a static member and is generated once on initialization.
+ * Holds a file-specific key which is derived from the master key, a random
+ * nonce, the file's unique ID, using HKDF. The master key is a static member
+ * and is generated once on initialization.
  */
 class EncryptedFile {
  public:
   static constexpr size_t kDefaultNonceSize = 16;
   using Nonce = std::array<uint8_t, kDefaultNonceSize>;
 
-  /** Derives the file's key from the given nonce and the master key.
-   */
+  // Obtains the file's uniqe ID from the file path
+  EncryptedFile(const std::string& file_path) noexcept;
+  EncryptedFile(EncryptedFile&&) = default;
+
+  // Derives the file's key from the given nonce.
   void CreateKey(edgeless::CBuffer nonce);
   const edgeless::crypto::Key* GetKey() const;
 
  protected:
   std::unique_ptr<edgeless::crypto::Key> key_;
+  std::optional<uint64_t> unique_id_;
   static const edgeless::crypto::Key& GetMasterKey();
 };
 
 class EncryptedWritableFile : public EncryptedFile {
  public:
-  /** Generates a nonce and uses it to derive the file's key from the master
-   * key.
-   */
+  using EncryptedFile::EncryptedFile;
+
+  // Generates a new random nonce and derives a key.
   void CreateKey();
-  /** Gets the nonce via move. Should only be called once, for writing the nonce
-   * out to a file.
-   */
+  // Gets the nonce via move. Should only be called once, for writing the nonce
+  // out to a file.
   std::unique_ptr<Nonce> GetNonce();
 
  private:

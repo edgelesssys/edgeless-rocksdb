@@ -29,15 +29,16 @@ class SequentialFileReader : public edg::EncryptedFile {
  public:
   explicit SequentialFileReader(std::unique_ptr<FSSequentialFile>&& _file,
                                 const std::string& _file_name)
-      : file_(std::move(_file)), file_name_(_file_name) {}
+      : EncryptedFile(_file_name), file_(std::move(_file)), file_name_(_file_name) {}
 
   explicit SequentialFileReader(std::unique_ptr<FSSequentialFile>&& _file,
                                 const std::string& _file_name,
                                 size_t _readahead_size)
-      : file_(NewReadaheadSequentialFile(std::move(_file), _readahead_size)),
+      : EncryptedFile(_file_name),
+        file_(NewReadaheadSequentialFile(std::move(_file), _readahead_size)),
         file_name_(_file_name) {}
 
-  SequentialFileReader(SequentialFileReader&& o) ROCKSDB_NOEXCEPT {
+  SequentialFileReader(SequentialFileReader&& o) ROCKSDB_NOEXCEPT : EncryptedFile(std::move(o)) {
     *this = std::move(o);
   }
 

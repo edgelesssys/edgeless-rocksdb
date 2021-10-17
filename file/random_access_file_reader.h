@@ -65,7 +65,8 @@ class RandomAccessFileReader : public edg::EncryptedFile {
       HistogramImpl* file_read_hist = nullptr,
       RateLimiter* rate_limiter = nullptr,
       const std::vector<std::shared_ptr<EventListener>>& listeners = {})
-      : file_(std::move(raf)),
+      : EncryptedFile(_file_name),
+        file_(std::move(raf)),
         file_name_(std::move(_file_name)),
         env_(env),
         stats_(stats),
@@ -85,7 +86,7 @@ class RandomAccessFileReader : public edg::EncryptedFile {
 #endif
   }
 
-  RandomAccessFileReader(RandomAccessFileReader&& o) ROCKSDB_NOEXCEPT {
+  RandomAccessFileReader(RandomAccessFileReader&& o) ROCKSDB_NOEXCEPT : EncryptedFile(std::move(o)) {
     *this = std::move(o);
   }
 

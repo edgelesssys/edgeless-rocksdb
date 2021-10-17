@@ -3676,12 +3676,12 @@ TEST_F(HarnessTest, FooterTests) {
     BlockHandle meta_index(10, 5), index(20, 15);
     footer.set_metaindex_handle(meta_index);
     footer.set_index_handle(index);
-    edg::EncryptedWritableFile fw;
+    edg::EncryptedWritableFile fw(MakeTableFileName(123));
     fw.CreateKey();
     footer.EncodeTo(&encoded, fw);
     Footer decoded_footer;
     Slice encoded_slice(encoded);
-    edg::EncryptedFile fr;
+    edg::EncryptedFile fr(MakeTableFileName(123));
     decoded_footer.DecodeFrom(&encoded_slice, fr);
     ASSERT_EQ(decoded_footer.table_magic_number(), 0);
     ASSERT_EQ(decoded_footer.metaindex_handle().offset(), meta_index.offset());
@@ -3793,6 +3793,23 @@ TEST_F(HarnessTest, FooterTests) {
     ASSERT_EQ(decoded_footer.version(), 2U);
   }
 #endif
+}
+
+TEST_F(HarnessTest, FooterTestsWrongFileName) {
+  // MODIFIED TEST: encode/decode encrypted footer
+  std::string encoded;
+  Footer footer;
+  BlockHandle meta_index(10, 5), index(20, 15);
+  footer.set_metaindex_handle(meta_index);
+  footer.set_index_handle(index);
+  edg::EncryptedWritableFile fw(MakeTableFileName(123));
+  fw.CreateKey();
+  footer.EncodeTo(&encoded, fw);
+  Footer decoded_footer;
+  Slice encoded_slice(encoded);
+  edg::EncryptedFile fr(MakeTableFileName(124));
+  // the following should fail, because we have the wrong file ID
+  ASSERT_NOK(decoded_footer.DecodeFrom(&encoded_slice, fr));
 }
 
 class IndexBlockRestartIntervalTest
