@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "file/encrypted_file_util.h"
 #include "file/read_write_util.h"
 #include "file/writable_file_writer.h"
 #include "options/options_helper.h"
@@ -54,18 +55,18 @@ Status PersistRocksDBOptions(const DBOptions& db_opt,
   writable.reset(new WritableFileWriter(std::move(wf), file_name, EnvOptions(),
                                         nullptr /* statistics */));
 
-  std::string options_file_content;
+  std::string options_file_content, buf;
 
-  writable->Append(option_file_header + "[" +
+  buf.append(option_file_header + "[" +
                    opt_section_titles[kOptionSectionVersion] +
                    "]\n"
                    "  rocksdb_version=" +
                    ToString(ROCKSDB_MAJOR) + "." + ToString(ROCKSDB_MINOR) +
                    "." + ToString(ROCKSDB_PATCH) + "\n");
-  writable->Append("  options_file_version=" +
+  buf.append("  options_file_version=" +
                    ToString(ROCKSDB_OPTION_FILE_MAJOR) + "." +
                    ToString(ROCKSDB_OPTION_FILE_MINOR) + "\n");
-  writable->Append("\n[" + opt_section_titles[kOptionSectionDBOptions] +
+  buf.append("\n[" + opt_section_titles[kOptionSectionDBOptions] +
                    "]\n  ");
 
   s = GetStringFromDBOptions(&options_file_content, db_opt, "\n  ");
@@ -73,11 +74,11 @@ Status PersistRocksDBOptions(const DBOptions& db_opt,
     writable->Close();
     return s;
   }
-  writable->Append(options_file_content + "\n");
+  buf.append(options_file_content + "\n");
 
   for (size_t i = 0; i < cf_opts.size(); ++i) {
     // CFOptions section
-    writable->Append("\n[" + opt_section_titles[kOptionSectionCFOptions] +
+    buf.append("\n[" + opt_section_titles[kOptionSectionCFOptions] +
                      " \"" + EscapeOptionString(cf_names[i]) + "\"]\n  ");
     s = GetStringFromColumnFamilyOptions(&options_file_content, cf_opts[i],
                                          "\n  ");
@@ -85,11 +86,11 @@ Status PersistRocksDBOptions(const DBOptions& db_opt,
       writable->Close();
       return s;
     }
-    writable->Append(options_file_content + "\n");
+    buf.append(options_file_content + "\n");
     // TableOptions section
     auto* tf = cf_opts[i].table_factory.get();
     if (tf != nullptr) {
-      writable->Append("[" + opt_section_titles[kOptionSectionTableOptions] +
+      buf.append("[" + opt_section_titles[kOptionSectionTableOptions] +
                        tf->Name() + " \"" + EscapeOptionString(cf_names[i]) +
                        "\"]\n  ");
       options_file_content.clear();
@@ -97,9 +98,13 @@ Status PersistRocksDBOptions(const DBOptions& db_opt,
       if (!s.ok()) {
         return s;
       }
-      writable->Append(options_file_content + "\n");
+      buf.append(options_file_content + "\n");
     }
   }
+
+  if (!edg::WriteEncRecord(*writable, buf, 0))
+    return Status::IOError("Failed to write encrypted record.");  
+  
   writable->Sync(true /* use_fsync */);
   writable->Close();
 
@@ -217,15 +222,19 @@ Status RocksDBOptionsParser::Parse(const std::string& file_name, FileSystem* fs,
   SequentialFileReader sf_reader(std::move(seq_file), file_name,
                                  file_readahead_size);
 
+  const auto record = edg::ReadEncRecord(sf_reader, 0);
+  if (!record.has_value())
+    return Status::IOError("Failed to read encrypted record.");
+
   OptionSection section = kOptionSectionUnknown;
   std::string title;
   std::string argument;
   std::unordered_map<std::string, std::string> opt_map;
-  std::istringstream iss;
+  std::istringstream iss{*record};
   std::string line;
   bool has_data = true;
   // we only support single-lined statement.
-  for (int line_num = 1; ReadOneLine(&iss, &sf_reader, &line, &has_data, &s);
+  for (int line_num = 1; std::getline(iss, line);
        ++line_num) {
     if (!s.ok()) {
       return s;

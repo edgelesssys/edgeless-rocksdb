@@ -1492,19 +1492,21 @@ TEST_F(BackupableDBTest, GarbageCollectionBeforeBackup) {
   OpenDBAndBackupEngine(true);
 
   backup_chroot_env_->CreateDirIfMissing(backupdir_ + "/shared");
-  std::string file_five = backupdir_ + "/shared/000007.sst";
+  // MODIFIED TEST: we switched to using one file ID instead of two file IDs for OPTIONS updates.
+  // Thus, we need to reduce this from 7 to 6 here.
+  std::string file_five = backupdir_ + "/shared/000006.sst";
   std::string file_five_contents = "I'm not really a sst file";
-  // this depends on the fact that 00007.sst is the first file created by the DB
+  // this depends on the fact that 00006.sst is the first file created by the DB
   ASSERT_OK(file_manager_->WriteToFile(file_five, file_five_contents));
 
   FillDB(db_.get(), 0, 100);
-  // backup overwrites file 000007.sst
+  // backup overwrites file 000006.sst
   ASSERT_TRUE(backup_engine_->CreateNewBackup(db_.get(), true).ok());
 
   std::string new_file_five_contents;
   ASSERT_OK(ReadFileToString(backup_chroot_env_.get(), file_five,
                              &new_file_five_contents));
-  // file 000007.sst was overwritten
+  // file 000006.sst was overwritten
   ASSERT_TRUE(new_file_five_contents != file_five_contents);
 
   CloseDBAndBackupEngine();
