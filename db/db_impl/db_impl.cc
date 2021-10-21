@@ -53,6 +53,7 @@
 #include "db/write_batch_internal.h"
 #include "db/write_callback.h"
 #include "env/composite_env_wrapper.h"
+#include "file/file_id.h"
 #include "file/file_util.h"
 #include "file/filename.h"
 #include "file/random_access_file_reader.h"
@@ -3720,14 +3721,20 @@ Status DBImpl::RenameTempFileToOptionsFile(const std::string& file_name) {
 #ifndef ROCKSDB_LITE
   Status s;
 
-  uint64_t options_file_number = versions_->NewFileNumber();
+  // EDG: no need to generate a new file id, we just reuse the old one.
+  // Keeping the file id is crucial for our encryption, because the file
+  // encryption key is derived from the file id.
+  const auto options_file_number = edg::FileIDFromPath(file_name);
+  if (!options_file_number.has_value())
+    return Status::InvalidArgument("Could not parse file id from path");
+
   std::string options_file_name =
-      OptionsFileName(GetName(), options_file_number);
+      OptionsFileName(GetName(), *options_file_number);
   // Retry if the file name happen to conflict with an existing one.
   s = GetEnv()->RenameFile(file_name, options_file_name);
   if (s.ok()) {
     InstrumentedMutexLock l(&mutex_);
-    versions_->options_file_number_ = options_file_number;
+    versions_->options_file_number_ = *options_file_number;
   }
 
   if (0 == disable_delete_obsolete_files_) {

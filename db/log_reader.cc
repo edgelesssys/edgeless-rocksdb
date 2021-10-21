@@ -360,7 +360,7 @@ bool Reader::DecryptRecord() {
   auto payload = edgeless::Buffer(
       const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(start_payload)),
       header.meta.length);
-  auto key = file_->GetKey();
+  decltype(auto) key = file_->GetKey();
   const auto succ = key->Decrypt(payload,
                                  edgeless::ToCBuffer(index_),       // iv
                                  edgeless::ToCBuffer(header.meta),  // aad

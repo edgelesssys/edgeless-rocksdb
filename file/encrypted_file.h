@@ -11,6 +11,8 @@
 #include <array>
 #include <memory>
 
+#include "rocksdb/slice.h"
+
 namespace rocksdb::edg {
 
 /** Base class for encrypted files.
@@ -22,7 +24,6 @@ namespace rocksdb::edg {
 class EncryptedFile {
  public:
   static constexpr size_t kDefaultNonceSize = 16;
-  using Nonce = std::array<uint8_t, kDefaultNonceSize>;
 
   // Obtains the file's uniqe ID from the file path
   EncryptedFile(const std::string& file_path) noexcept;
@@ -30,10 +31,10 @@ class EncryptedFile {
 
   // Derives the file's key from the given nonce.
   void CreateKey(edgeless::CBuffer nonce);
-  const edgeless::crypto::Key* GetKey() const;
+  const std::optional<edgeless::crypto::Key>& GetKey() const;
 
  protected:
-  std::unique_ptr<edgeless::crypto::Key> key_;
+  std::optional<edgeless::crypto::Key> key_;
   std::optional<uint64_t> unique_id_;
   static const edgeless::crypto::Key& GetMasterKey();
 };
@@ -44,12 +45,11 @@ class EncryptedWritableFile : public EncryptedFile {
 
   // Generates a new random nonce and derives a key.
   void CreateKey();
-  // Gets the nonce via move. Should only be called once, for writing the nonce
-  // out to a file.
-  std::unique_ptr<Nonce> GetNonce();
+  // Get a Slice for the nonce
+  Slice GetNonce();
 
  private:
-  std::unique_ptr<Nonce> nonce_;
+  std::optional<std::array<uint8_t, kDefaultNonceSize>> nonce_;
 };
 
 }  // namespace rocksdb::edg

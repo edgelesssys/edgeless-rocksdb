@@ -170,7 +170,7 @@ void Footer::EncodeTo(std::string* dst, edg::EncryptedWritableFile& file) const 
   file.GetKey()->Encrypt(kIv, handles, tag);
   // Write the nonce to the end
   const auto nonce = file.GetNonce();
-  std::copy_n(nonce->data(), sizeof(*nonce), tag.data() + tag.size());
+  std::copy_n(nonce.data(), nonce.size(), tag.data() + tag.size());
 }
 
 Status Footer::DecodeFrom(Slice* input, edg::EncryptedFile& file) {
