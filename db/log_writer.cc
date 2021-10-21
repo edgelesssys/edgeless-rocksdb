@@ -16,6 +16,7 @@
 #include "db/log_writer.h"
 
 #include <stdint.h>
+#include "file/encrypted_file_util.h"
 #include "file/writable_file_writer.h"
 #include "rocksdb/env.h"
 #include "util/coding.h"
@@ -58,9 +59,7 @@ Status Writer::AddRecord(const Slice& slice) {
   // generate a key and write the "nonce record" first.
   if (index_ == 0) {
     dest_->CreateKey();
-    auto nonce = dest_->GetNonce();
-    const auto s = AddRecordInternal(
-        {reinterpret_cast<const char*>(nonce->data()), nonce->size()});
+    const auto s = AddRecordInternal(dest_->GetNonce());
     if (!s.ok()) return s;
   }
   return AddRecordInternal(slice);
@@ -142,7 +141,7 @@ Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n) {
   if (!index_) {
     // zero-out the tag
     header.tag.fill(0);
-    s = dest_->Append({reinterpret_cast<const char*>(&header), sizeof(header)});
+    s = dest_->Append(edg::ToSliceRaw(header));
     if (!s.ok()) return s;
     s = dest_->Append({ptr, n});  // write "nonce record"
   } else {
@@ -152,10 +151,9 @@ Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n) {
                  edgeless::ToCBuffer(index_),                 // iv
                  edgeless::ToCBuffer(header.meta),            // aad
                  header.tag, ciphertext);
-    s = dest_->Append({reinterpret_cast<const char*>(&header), sizeof(header)});
+    s = dest_->Append(edg::ToSliceRaw(header));
     if (!s.ok()) return s;
-    s = dest_->Append(
-        {reinterpret_cast<const char*>(ciphertext.data()), ciphertext.size()});
+    s = dest_->Append(edg::ToSlice(ciphertext));
   }
   if (s.ok()) index_++;
   return s;

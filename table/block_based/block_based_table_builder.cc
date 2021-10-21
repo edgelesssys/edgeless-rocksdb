@@ -34,6 +34,8 @@
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/table.h"
 
+#include "file/encrypted_file_util.h"
+
 #include "table/block_based/block.h"
 #include "table/block_based/block_based_filter_block.h"
 #include "table/block_based/block_based_table_factory.h"
@@ -714,12 +716,6 @@ void BlockBasedTableBuilder::WriteBlock(const Slice& raw_block_contents,
   }
 }
 
-// Derive Slice from container
-template <typename T>
-static rocksdb::Slice to_slice(const T& a) {
-  return {reinterpret_cast<const char*>(a.data()), a.size()};
-}
-
 void BlockBasedTableBuilder::WriteRawBlock(const Slice& block_contents,
                                            CompressionType type,
                                            BlockHandle* handle,
@@ -748,7 +744,7 @@ void BlockBasedTableBuilder::WriteRawBlock(const Slice& block_contents,
   // Encrypt in place
   r->file->GetKey()->Encrypt(plaintext, handle->GetEncIv(), trailer->tag,
                              plaintext);
-  r->status = r->file->Append(to_slice(buf));
+  r->status = r->file->Append(edg::ToSlice(buf));
   if (!r->status.ok()) return;
 
   r->status = InsertBlockInCache(block_contents, type, handle);

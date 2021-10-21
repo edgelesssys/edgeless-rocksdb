@@ -12,7 +12,7 @@
 using namespace std;
 using namespace edgeless;
 
-namespace rocksdb {
+namespace rocksdb::edg {
 
 #pragma pack(push, 1)
 struct EncRecordHeader {

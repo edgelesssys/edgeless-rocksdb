@@ -158,7 +158,7 @@ class Footer {
   // EDG: length of two encoded block handles and one AES-GCM tag
   static constexpr size_t kSize = kSizeHandles +
                                   edgeless::crypto::Key::kSizeTag +
-                                  sizeof(edg::EncryptedFile::Nonce);
+                                  edg::EncryptedFile::kDefaultNonceSize;
 
   static const uint64_t kInvalidTableMagicNumber = 0;
 
