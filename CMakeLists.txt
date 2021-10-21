@@ -572,6 +572,7 @@ set(SOURCES
         file/sst_file_manager_impl.cc
         file/writable_file_writer.cc
         file/encrypted_file.cc
+        file/encrypted_file_util.cc
         logging/auto_roll_logger.cc
         logging/event_logger.cc
         logging/log_buffer.cc
