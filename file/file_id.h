@@ -4,8 +4,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-#include <optional>
+#include <cstdint>
 #include <filesystem>
+#include <optional>
+#include <string>
 
 #include "file/filename.h"
 
@@ -28,4 +30,4 @@ inline std::optional<uint64_t> FileIDFromPath(const std::string& file_path) {
   if (!ParseFileName(file_name, &unique_id, &type, &log_type)) return {};
   return unique_id;
 }
-}  // namespace rocksdb
+}  // namespace rocksdb::edg

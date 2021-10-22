@@ -6,6 +6,12 @@
 
 #pragma once
 
+#include <edgeless/buffer.h>
+
+#include <cstdint>
+#include <optional>
+#include <string>
+
 #include "file/sequence_file_reader.h"
 #include "file/writable_file_writer.h"
 
@@ -30,4 +36,4 @@ bool WriteEncRecord(WritableFileWriter& file, const Slice& record,
 std::optional<std::string> ReadEncRecord(SequentialFileReader& file,
                                          const uint64_t iv);
 
-}  // namespace rocksdb
+}  // namespace rocksdb::edg

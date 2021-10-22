@@ -9,7 +9,9 @@
 #include <edgeless/crypto.h>
 
 #include <array>
-#include <memory>
+#include <cstdint>
+#include <optional>
+#include <string>
 
 #include "rocksdb/slice.h"
 
